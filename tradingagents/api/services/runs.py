@@ -32,9 +32,12 @@ class RunService:
         )
         self.events.append(run["id"], "queued", {"ticker": run["ticker"]})
         if self.queue_enabled and self.redis_url:
-            from tradingagents.worker.queue import enqueue_fake_analysis
+            from tradingagents.worker.queue import enqueue_analysis, enqueue_fake_analysis
 
-            enqueue_fake_analysis(self.redis_url, run["id"], self.db_path)
+            if os.getenv("TRADINGAGENTS_FAKE_ANALYSIS", "false").lower() == "true":
+                enqueue_fake_analysis(self.redis_url, run["id"], self.db_path)
+            else:
+                enqueue_analysis(self.redis_url, run["id"], self.db_path)
         return run
 
     def list_runs(self) -> list[dict]:
