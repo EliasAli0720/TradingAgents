@@ -13,6 +13,7 @@ class ApiConfig:
     db_path: str
     results_dir: str
     cors_origins: tuple[str, ...]
+    queue_enabled: bool = True
 
     @classmethod
     def from_env(cls) -> "ApiConfig":
@@ -27,6 +28,7 @@ class ApiConfig:
             db_path=os.getenv("TRADINGBOT_DB_PATH", str(home / "tradingbot.db")),
             results_dir=os.getenv("TRADINGAGENTS_RESULTS_DIR", str(home / "logs")),
             cors_origins=tuple(o.strip() for o in origins.split(",") if o.strip()),
+            queue_enabled=os.getenv("TRADINGAGENTS_QUEUE_ENABLED", "true").lower() != "false",
         )
 
     @property

@@ -10,7 +10,10 @@ from tradingagents.llm_clients.api_key_env import get_api_key_env
 
 
 class RunService:
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str, redis_url: str | None = None, queue_enabled: bool = True):
+        self.db_path = db_path
+        self.redis_url = redis_url
+        self.queue_enabled = queue_enabled
         self.runs = RunRepository(db_path)
         self.events = RunEventRepository(db_path)
 
@@ -28,6 +31,10 @@ class RunService:
             config=request.model_dump(),
         )
         self.events.append(run["id"], "queued", {"ticker": run["ticker"]})
+        if self.queue_enabled and self.redis_url:
+            from tradingagents.worker.queue import enqueue_fake_analysis
+
+            enqueue_fake_analysis(self.redis_url, run["id"], self.db_path)
         return run
 
     def list_runs(self) -> list[dict]:

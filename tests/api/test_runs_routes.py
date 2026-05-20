@@ -11,6 +11,7 @@ def make_client(tmp_path):
         db_path=str(tmp_path / "api.db"),
         results_dir=str(tmp_path / "logs"),
         cors_origins=("http://localhost:5173",),
+        queue_enabled=False,
     )
     return TestClient(create_app(config))
 

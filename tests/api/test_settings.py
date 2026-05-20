@@ -22,6 +22,7 @@ def test_api_config_uses_safe_defaults(monkeypatch):
         "http://localhost:5173",
         "http://127.0.0.1:5173",
     )
+    assert config.queue_enabled is True
     assert config.api_token is None
     assert config.auth_enabled is False
 

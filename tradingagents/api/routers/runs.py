@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/runs", tags=["runs"])
 
 
 def get_run_service(config: ApiConfig = Depends(get_config)) -> RunService:
-    return RunService(config.db_path)
+    return RunService(config.db_path, redis_url=config.redis_url, queue_enabled=config.queue_enabled)
 
 
 @router.post("", response_model=RunResponse, status_code=201)
