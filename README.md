@@ -132,6 +132,11 @@ For local models with Ollama:
 docker compose --profile ollama run --rm tradingagents-ollama
 ```
 
+## Web App Development
+
+The React/FastAPI web app is being introduced alongside the existing CLI and Streamlit dashboard.
+See [docs/web-development.md](docs/web-development.md) for local API, worker, Redis, and frontend commands.
+
 ### Required APIs
 
 TradingAgents supports multiple LLM providers. Set the API key for your chosen provider:

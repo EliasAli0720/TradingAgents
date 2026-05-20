@@ -2,7 +2,8 @@ services:
   tradingagents:
     build: .
     env_file:
-      - .env
+      - path: .env
+        required: false
     volumes:
       - tradingagents_data:/home/appuser/.tradingagents
     tty: true
@@ -18,7 +19,8 @@ services:
   tradingagents-ollama:
     build: .
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       - LLM_PROVIDER=ollama
     volumes:
@@ -29,6 +31,44 @@ services:
     stdin_open: true
     profiles:
       - ollama
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  api:
+    build: .
+    entrypoint: []
+    command: uvicorn tradingagents.api.app:app --host 0.0.0.0 --port 8000
+    environment:
+      TRADINGAGENTS_REDIS_URL: redis://redis:6379/0
+      TRADINGAGENTS_API_TOKEN: ${TRADINGAGENTS_API_TOKEN:-dev-token}
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+
+  worker:
+    build: .
+    entrypoint: []
+    command: python -m tradingagents.worker.runner
+    environment:
+      TRADINGAGENTS_REDIS_URL: redis://redis:6379/0
+      TRADINGAGENTS_API_TOKEN: ${TRADINGAGENTS_API_TOKEN:-dev-token}
+    depends_on:
+      - redis
+
+  web:
+    image: node:22
+    working_dir: /app/apps/web
+    command: sh -c "npm install && npm run dev"
+    volumes:
+      - .:/app
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
 
 volumes:
   tradingagents_data:
