@@ -1,5 +1,8 @@
 from pathlib import Path
 
+from fastapi.testclient import TestClient
+
+from tradingagents.api.app import create_app
 from tradingagents.api.config import ApiConfig
 
 
@@ -37,3 +40,22 @@ def test_api_config_redacts_secret_values(monkeypatch):
         "GOOGLE_API_KEY": {"configured": False},
     }
     assert "sk-real-value" not in str(status)
+
+
+def test_settings_reports_key_status_without_secret_values(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-secret")
+    config = ApiConfig(
+        api_token="test-token",
+        redis_url="redis://localhost:6379/0",
+        db_path=str(tmp_path / "api.db"),
+        results_dir=str(tmp_path / "logs"),
+        cors_origins=("http://localhost:5173",),
+    )
+    client = TestClient(create_app(config))
+
+    response = client.get("/api/settings", headers={"Authorization": "Bearer test-token"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["provider_keys"]["OPENAI_API_KEY"]["configured"] is True
+    assert "sk-secret" not in str(body)

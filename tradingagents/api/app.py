@@ -4,10 +4,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from tradingagents.api.config import ApiConfig
+from tradingagents.api.db import init_api_schema
+from tradingagents.api.routers import auth, settings
 
 
 def create_app(config: ApiConfig | None = None) -> FastAPI:
     config = config or ApiConfig.from_env()
+    init_api_schema(config.db_path)
     app = FastAPI(title="TradingAgents API")
     app.state.api_config = config
     app.add_middleware(
@@ -22,6 +25,8 @@ def create_app(config: ApiConfig | None = None) -> FastAPI:
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    app.include_router(auth.router)
+    app.include_router(settings.router)
     return app
 
 
