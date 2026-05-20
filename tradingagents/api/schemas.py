@@ -70,3 +70,15 @@ class RunEventResponse(BaseModel):
     type: str
     timestamp: str
     payload: dict[str, Any]
+
+
+class ApprovalDecisionRequest(BaseModel):
+    confirmation: str = ""
+    reason: str = ""
+
+
+class ManualTradeRequest(BaseModel):
+    ticker: str = Field(min_length=1, max_length=32)
+    side: Literal["buy", "sell"]
+    quantity: float = Field(gt=0)
+    confirmation: str

@@ -173,3 +173,94 @@ class AuditRepository:
                 (limit,),
             ).fetchall()
         return [_decode_json_fields(_row_to_dict(row), ("payload_json",)) for row in rows]
+
+
+class ApprovalRepository:
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+
+    def create(
+        self,
+        run_id: str | None,
+        ticker: str,
+        signal: str,
+        side: str,
+        quantity: float,
+        estimated_price: float,
+        reasoning: str,
+    ) -> dict[str, Any]:
+        approval_id = f"appr_{uuid.uuid4().hex}"
+        now = utc_now()
+        estimated_value = quantity * estimated_price
+        with connect(self.db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO approvals
+                    (id, run_id, ticker, signal, side, quantity, estimated_price, estimated_value,
+                     reasoning, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    approval_id,
+                    run_id,
+                    ticker.upper(),
+                    signal,
+                    side,
+                    quantity,
+                    estimated_price,
+                    estimated_value,
+                    reasoning,
+                    "pending",
+                    now,
+                    now,
+                ),
+            )
+        return self.get(approval_id)
+
+    def get(self, approval_id: str) -> dict[str, Any]:
+        with connect(self.db_path) as conn:
+            row = conn.execute("SELECT * FROM approvals WHERE id = ?", (approval_id,)).fetchone()
+        if row is None:
+            raise KeyError(approval_id)
+        return _row_to_dict(row)
+
+    def list(self, status: str | None = None) -> list[dict[str, Any]]:
+        with connect(self.db_path) as conn:
+            if status:
+                rows = conn.execute(
+                    "SELECT * FROM approvals WHERE status = ? ORDER BY created_at DESC, rowid DESC",
+                    (status,),
+                ).fetchall()
+            else:
+                rows = conn.execute("SELECT * FROM approvals ORDER BY created_at DESC, rowid DESC").fetchall()
+        return [_row_to_dict(row) for row in rows]
+
+    def approve(self, approval_id: str, confirmation: str, actor: str) -> dict[str, Any]:
+        approval = self.get(approval_id)
+        expected = f"APPROVE {approval['ticker']}"
+        if confirmation.strip().upper() != expected:
+            raise ValueError(f"Confirmation must be exactly {expected}")
+        now = utc_now()
+        with connect(self.db_path) as conn:
+            conn.execute(
+                """
+                UPDATE approvals
+                SET status = 'approved', updated_at = ?, decided_at = ?, decision_reason = ?
+                WHERE id = ?
+                """,
+                (now, now, f"approved by {actor}", approval_id),
+            )
+        return self.get(approval_id)
+
+    def reject(self, approval_id: str, reason: str, actor: str) -> dict[str, Any]:
+        now = utc_now()
+        with connect(self.db_path) as conn:
+            conn.execute(
+                """
+                UPDATE approvals
+                SET status = 'rejected', updated_at = ?, decided_at = ?, decision_reason = ?
+                WHERE id = ?
+                """,
+                (now, now, f"{actor}: {reason}", approval_id),
+            )
+        return self.get(approval_id)
