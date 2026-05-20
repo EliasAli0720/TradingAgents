@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from tradingagents.api.config import ApiConfig
 from tradingagents.api.db import init_api_schema
-from tradingagents.api.routers import auth, settings
+from tradingagents.api.routers import auth, runs, settings
 
 
 def create_app(config: ApiConfig | None = None) -> FastAPI:
@@ -27,6 +27,7 @@ def create_app(config: ApiConfig | None = None) -> FastAPI:
 
     app.include_router(auth.router)
     app.include_router(settings.router)
+    app.include_router(runs.router)
     return app
 
 
