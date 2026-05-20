@@ -2,6 +2,9 @@ import { useState } from "react";
 import { Route, Routes } from "react-router-dom";
 import { LoginPage } from "./components/auth/LoginPage";
 import { AppShell } from "./components/layout/AppShell";
+import { RunDetailPage } from "./pages/RunDetailPage";
+import { RunsPage } from "./pages/RunsPage";
+import { WorkbenchPage } from "./pages/WorkbenchPage";
 
 function Placeholder({ title }: { title: string }) {
   return <h2>{title}</h2>;
@@ -24,8 +27,9 @@ export function App() {
   return (
     <Routes>
       <Route element={<AppShell />}>
-        <Route index element={<Placeholder title="Workbench" />} />
-        <Route path="/runs" element={<Placeholder title="Runs" />} />
+        <Route index element={<WorkbenchPage />} />
+        <Route path="/runs" element={<RunsPage />} />
+        <Route path="/runs/:runId" element={<RunDetailPage />} />
         <Route path="/portfolio" element={<Placeholder title="Portfolio" />} />
         <Route path="/performance" element={<Placeholder title="Performance" />} />
         <Route path="/trades" element={<Placeholder title="Trades" />} />

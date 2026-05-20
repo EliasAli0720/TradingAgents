@@ -84,3 +84,45 @@ a {
 .content-panel {
   padding: 24px;
 }
+
+.page-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.workbench-form {
+  display: grid;
+  gap: 12px;
+  max-width: 640px;
+}
+
+.workbench-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.workbench-form input,
+.workbench-form select,
+.workbench-form button {
+  border: 1px solid #374151;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.workbench-form input,
+.workbench-form select {
+  background: #0f172a;
+  color: #f9fafb;
+}
+
+.workbench-form button {
+  background: #2563eb;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.detail-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
