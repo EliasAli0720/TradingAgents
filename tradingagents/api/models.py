@@ -98,3 +98,17 @@ class Session(Base):
         Index("idx_sessions_user_id", "user_id"),
         Index("idx_sessions_expires_at", "expires_at"),
     )
+
+
+class UserModelSetting(Base):
+    __tablename__ = "user_model_settings"
+
+    user_id: Mapped[str] = mapped_column(
+        String, ForeignKey("users.user_id", ondelete="CASCADE"), primary_key=True
+    )
+    llm_provider: Mapped[str] = mapped_column(String, nullable=False)
+    deep_think_llm: Mapped[str] = mapped_column(String, nullable=False)
+    quick_think_llm: Mapped[str] = mapped_column(String, nullable=False)
+    backend_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
