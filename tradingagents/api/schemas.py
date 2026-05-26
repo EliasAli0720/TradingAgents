@@ -42,6 +42,8 @@ class CreateRunRequest(BaseModel):
     def require_analysts(cls, value: list[AnalystKey]) -> list[AnalystKey]:
         if not value:
             raise ValueError("at least one analyst is required")
+        if len(value) != len(set(value)):
+            raise ValueError("analysts must be unique")
         return value
 
     @model_validator(mode="after")

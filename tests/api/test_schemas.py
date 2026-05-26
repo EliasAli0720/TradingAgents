@@ -44,3 +44,33 @@ def test_create_run_request_rejects_crypto_fundamentals():
             asset_type="crypto",
             analysts=["market", "fundamentals"],
         )
+
+
+def test_create_run_request_rejects_duplicate_analysts():
+    with pytest.raises(ValidationError):
+        CreateRunRequest(
+            ticker="NVDA",
+            trade_date=date(2026, 1, 15),
+            asset_type="stock",
+            analysts=["market", "market"],
+        )
+
+
+def test_create_run_request_rejects_empty_analysts():
+    with pytest.raises(ValidationError):
+        CreateRunRequest(
+            ticker="NVDA",
+            trade_date=date(2026, 1, 15),
+            asset_type="stock",
+            analysts=[],
+        )
+
+
+def test_create_run_request_defaults_to_all_stock_analysts():
+    req = CreateRunRequest(
+        ticker="NVDA",
+        trade_date=date(2026, 1, 15),
+        asset_type="stock",
+    )
+
+    assert req.analysts == ["market", "social", "news", "fundamentals"]
