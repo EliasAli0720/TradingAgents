@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from tradingagents.api.deps import get_db_session, get_task_enqueue
+from tradingagents.api.deps import get_db_session, get_stream_session_factory, get_task_enqueue
 from tradingagents.api.repositories import AnalysisRunRepository
 from tradingagents.api.schemas import (
     CreateRunRequest,
@@ -33,8 +33,13 @@ def create_run(
         asset_type=request.asset_type,
         analysts=list(request.analysts),
     )
-    session.flush()
-    task_id = enqueue(run.run_id)
+    session.commit()
+    try:
+        task_id = enqueue(run.run_id)
+    except Exception as exc:
+        repo.store_failure(run.run_id, str(exc))
+        session.commit()
+        raise
     repo.set_celery_task_id(run.run_id, task_id)
     session.commit()
     return CreateRunResponse(run_id=run.run_id, status="queued")
@@ -73,7 +78,11 @@ def get_result(run_id: str, session: Session = Depends(get_db_session)):
 
 
 @router.get("/{run_id}/events")
-async def stream_events(run_id: str, session: Session = Depends(get_db_session)):
+async def stream_events(
+    run_id: str,
+    session: Session = Depends(get_db_session),
+    stream_session_factory=Depends(get_stream_session_factory),
+):
     repo = AnalysisRunRepository(session)
     if repo.get_run(run_id) is None:
         raise HTTPException(status_code=404, detail="run not found")
@@ -82,13 +91,15 @@ async def stream_events(run_id: str, session: Session = Depends(get_db_session))
         last_id = 0
         terminal = False
         while not terminal:
-            events = repo.list_events(run_id, after_id=last_id)
-            for event in events:
-                last_id = event.id
-                yield f"event: {event.event_type}\n"
-                yield f"data: {json.dumps(event.payload)}\n\n"
-                if event.event_type in {"run_succeeded", "run_failed"}:
-                    terminal = True
+            with stream_session_factory() as stream_session:
+                stream_repo = AnalysisRunRepository(stream_session)
+                events = stream_repo.list_events(run_id, after_id=last_id)
+                for event in events:
+                    last_id = event.id
+                    yield f"event: {event.event_type}\n"
+                    yield f"data: {json.dumps(event.payload)}\n\n"
+                    if event.event_type in {"run_succeeded", "run_failed"}:
+                        terminal = True
             if not terminal:
                 await asyncio.sleep(1)
 

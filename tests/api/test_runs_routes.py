@@ -114,7 +114,31 @@ def test_result_after_completion_returns_payload():
     assert response.json()["decision"] == "Hold"
 
 
-def test_post_runs_enqueue_failure_does_not_commit_run():
+def test_post_runs_commits_run_before_enqueue():
+    observed = {}
+
+    def enqueue(run_id: str) -> str:
+        with Session() as session:
+            observed["status"] = AnalysisRunRepository(session).get_run(run_id).status
+        return "celery-test-id"
+
+    client, Session = _client_with_enqueue(enqueue)
+
+    response = client.post(
+        "/runs",
+        json={
+            "ticker": "nvda",
+            "trade_date": "2026-01-15",
+            "asset_type": "stock",
+            "analysts": ["market"],
+        },
+    )
+
+    assert response.status_code == 202
+    assert observed["status"] == "queued"
+
+
+def test_post_runs_enqueue_failure_marks_run_failed():
     def enqueue(_run_id: str) -> str:
         raise RuntimeError("redis unavailable")
 
@@ -132,4 +156,6 @@ def test_post_runs_enqueue_failure_does_not_commit_run():
 
     assert response.status_code == 500
     with Session() as session:
-        assert session.query(AnalysisRun).count() == 0
+        run = session.query(AnalysisRun).one()
+        assert run.status == "failed"
+        assert run.error == "redis unavailable"
