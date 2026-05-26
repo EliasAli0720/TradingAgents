@@ -17,5 +17,5 @@ celery_app.conf.update(
     accept_content=["json"],
     result_serializer="json",
     task_time_limit=settings.task_time_limit_seconds,
+    imports=("tradingagents.worker.jobs",),
 )
-celery_app.autodiscover_tasks(["tradingagents.worker"])

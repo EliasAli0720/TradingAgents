@@ -18,12 +18,11 @@ def execute_analysis_run(
     run_id: str,
     executor: AnalysisExecutor = run_tradingagents_analysis,
 ) -> None:
-    run = repo.get_run(run_id)
-    if run is None or run.status != "queued":
+    run = repo.claim_queued_run(run_id)
+    if run is None:
         return
 
     try:
-        repo.mark_running(run_id)
         repo.session.commit()
         output = executor(run.ticker, run.trade_date, run.asset_type, run.analysts)
         repo.store_success(

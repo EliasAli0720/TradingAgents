@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 from typing import Any, Optional
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from tradingagents.api.models import AnalysisRun, AnalysisRunEvent, AnalysisRunResult
@@ -71,6 +71,20 @@ class AnalysisRunRepository:
         run.current_step = "Analysis running"
         self.add_event(run_id, "run_started", {"run_id": run_id, "status": "running"})
         return run
+
+    def claim_queued_run(self, run_id: str) -> Optional[AnalysisRun]:
+        now = utcnow()
+        result = self.session.execute(
+            update(AnalysisRun)
+            .where(AnalysisRun.run_id == run_id, AnalysisRun.status == "queued")
+            .values(status="running", started_at=now, current_step="Analysis running")
+            .execution_options(synchronize_session=False)
+        )
+        if result.rowcount != 1:
+            return None
+
+        self.add_event(run_id, "run_started", {"run_id": run_id, "status": "running"})
+        return self.require_run(run_id)
 
     def store_success(
         self,
