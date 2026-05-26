@@ -28,6 +28,7 @@ def test_analysis_tables_can_store_run_event_and_result():
         trade_date=date(2026, 1, 15),
         asset_type="stock",
         analysts=["market", "news"],
+        user_id="__system__",
         current_step=None,
         celery_task_id=None,
         error=None,
@@ -94,6 +95,7 @@ def test_create_db_engine_shares_in_memory_sqlite_across_threaded_sessions():
                 trade_date=date(2026, 1, 15),
                 asset_type="stock",
                 analysts=["market"],
+                user_id="__system__",
                 created_at=now,
             )
         )

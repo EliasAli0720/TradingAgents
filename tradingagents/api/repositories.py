@@ -28,6 +28,7 @@ class AnalysisRunRepository:
         trade_date: date,
         asset_type: str,
         analysts: list[str],
+        user_id: str = "__system__",
     ) -> AnalysisRun:
         now = utcnow()
         run = AnalysisRun(
@@ -37,6 +38,7 @@ class AnalysisRunRepository:
             trade_date=trade_date,
             asset_type=asset_type,
             analysts=analysts,
+            user_id=user_id,
             current_step=None,
             celery_task_id=None,
             error=None,
