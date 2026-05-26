@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from tradingagents.api.config import get_api_settings
 from tradingagents.api.db import init_db
 from tradingagents.api.middleware import CsrfMiddleware
-from tradingagents.api.routers import health, runs
+from tradingagents.api.routers import auth, health, runs
 
 
 def create_app() -> FastAPI:
@@ -20,6 +20,7 @@ def create_app() -> FastAPI:
         exempt_paths=("/auth/login", "/auth/register", "/runs"),
     )
     app.include_router(health.router)
+    app.include_router(auth.router)
     app.include_router(runs.router)
 
     @app.on_event("startup")

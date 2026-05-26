@@ -85,3 +85,27 @@ class HealthResponse(BaseModel):
     status: str
     postgres: str
     redis: str
+
+
+UserRole = Literal["admin", "operator", "viewer"]
+
+
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class UserResponse(BaseModel):
+    user_id: str
+    username: str
+    role: UserRole
