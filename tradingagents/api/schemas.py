@@ -87,6 +87,66 @@ class HealthResponse(BaseModel):
     redis: str
 
 
+SUPPORTED_LLM_PROVIDERS = {
+    "anthropic",
+    "azure",
+    "deepseek",
+    "glm",
+    "glm-cn",
+    "google",
+    "minimax",
+    "minimax-cn",
+    "ollama",
+    "openai",
+    "openrouter",
+    "qwen",
+    "qwen-cn",
+    "xai",
+}
+
+
+class ModelSettingsRequest(BaseModel):
+    llm_provider: str
+    deep_think_llm: str
+    quick_think_llm: str
+    backend_url: Optional[str] = None
+
+    @field_validator("llm_provider")
+    @classmethod
+    def validate_provider(cls, value: str) -> str:
+        provider = value.strip().lower()
+        if provider not in SUPPORTED_LLM_PROVIDERS:
+            raise ValueError("unsupported llm_provider")
+        return provider
+
+    @field_validator("deep_think_llm", "quick_think_llm")
+    @classmethod
+    def validate_model_id(cls, value: str) -> str:
+        model = value.strip()
+        if not model:
+            raise ValueError("model id cannot be empty")
+        return model
+
+    @field_validator("backend_url")
+    @classmethod
+    def validate_backend_url(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        url = value.strip()
+        if not url:
+            return None
+        if not (url.startswith("http://") or url.startswith("https://")):
+            raise ValueError("backend_url must start with http:// or https://")
+        return url
+
+
+class ModelSettingsResponse(BaseModel):
+    llm_provider: str
+    deep_think_llm: str
+    quick_think_llm: str
+    backend_url: Optional[str]
+
+
 UserRole = Literal["admin", "operator", "viewer"]
 
 
