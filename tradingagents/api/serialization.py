@@ -16,14 +16,14 @@ REPORT_KEYS = (
 
 
 def extract_reports(final_state: dict[str, Any]) -> dict[str, Any]:
-    return {key: final_state.get(key, "") for key in REPORT_KEYS}
+    return {key: _json_safe(final_state.get(key, "")) for key in REPORT_KEYS}
 
 
 def _json_safe(value: Any) -> Any:
     try:
-        json.dumps(value)
+        json.dumps(value, allow_nan=False)
         return value
-    except TypeError:
+    except (TypeError, ValueError):
         if isinstance(value, dict):
             return {str(k): _json_safe(v) for k, v in value.items()}
         if isinstance(value, (list, tuple)):

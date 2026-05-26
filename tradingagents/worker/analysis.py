@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import date
 from typing import Any
 
@@ -14,7 +15,7 @@ def run_tradingagents_analysis(
     asset_type: str,
     analysts: list[str],
 ) -> dict[str, Any]:
-    config = DEFAULT_CONFIG.copy()
+    config = deepcopy(DEFAULT_CONFIG)
     graph = TradingAgentsGraph(selected_analysts=analysts, config=config)
     final_state, decision = graph.propagate(
         ticker,
