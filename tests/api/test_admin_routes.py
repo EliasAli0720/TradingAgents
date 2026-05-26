@@ -28,6 +28,19 @@ def _register_login(client, username, password="hunter22a"):
     client.headers.update({"X-CSRF-Token": csrf})
 
 
+def _put_model_settings(client):
+    r = client.put(
+        "/settings/model",
+        json={
+            "llm_provider": "openai",
+            "deep_think_llm": "gpt-5.4",
+            "quick_think_llm": "gpt-5.4-mini",
+            "backend_url": None,
+        },
+    )
+    assert r.status_code == 200
+
+
 def test_admin_list_users():
     app, _ = _build_app()
     admin = TestClient(app)
@@ -93,6 +106,7 @@ def test_admin_list_runs_across_users():
     app, _ = _build_app()
     admin = TestClient(app)
     _register_login(admin, "alice")
+    _put_model_settings(admin)
     admin.post(
         "/runs",
         json={
