@@ -61,6 +61,11 @@ class AnalysisRunRepository:
 
     def mark_running(self, run_id: str) -> AnalysisRun:
         run = self.require_run(run_id)
+        if run.status == "running":
+            return run
+        if run.status in {"succeeded", "failed"}:
+            raise ValueError(f"Cannot mark terminal run {run_id} as running")
+
         run.status = "running"
         run.started_at = utcnow()
         run.current_step = "Analysis running"
@@ -76,6 +81,13 @@ class AnalysisRunRepository:
     ) -> AnalysisRunResult:
         now = utcnow()
         run = self.require_run(run_id)
+        if run.status == "succeeded":
+            result = self.get_result(run_id)
+            if result is not None:
+                return result
+        if run.status == "failed":
+            raise ValueError(f"Cannot mark failed run {run_id} as succeeded")
+
         result = AnalysisRunResult(
             run_id=run_id,
             decision=decision,
@@ -83,16 +95,21 @@ class AnalysisRunRepository:
             final_state=final_state,
             created_at=now,
         )
-        self.session.merge(result)
+        persistent_result = self.session.merge(result)
         run.status = "succeeded"
         run.finished_at = now
         run.current_step = "Completed"
         run.error = None
         self.add_event(run_id, "run_succeeded", {"run_id": run_id, "decision": decision})
-        return result
+        return persistent_result
 
     def store_failure(self, run_id: str, error: str) -> None:
         run = self.require_run(run_id)
+        if run.status == "failed":
+            return
+        if run.status == "succeeded":
+            raise ValueError(f"Cannot mark succeeded run {run_id} as failed")
+
         run.status = "failed"
         run.finished_at = utcnow()
         run.current_step = "Failed"

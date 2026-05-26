@@ -174,3 +174,96 @@ def test_repository_stores_failure():
     assert saved.status == "failed"
     assert saved.error == "provider failed"
     assert repo.list_events(run.run_id)[-1].event_type == "run_failed"
+
+
+def test_store_success_returns_persistent_result():
+    session = _session()
+    repo = AnalysisRunRepository(session)
+    run = repo.create_run(
+        ticker="NVDA",
+        trade_date=date(2026, 1, 15),
+        asset_type="stock",
+        analysts=["market"],
+    )
+    returned = repo.store_success(
+        run_id=run.run_id,
+        decision="Hold",
+        reports={"final_trade_decision": "Rating: Hold"},
+        final_state={"company_of_interest": "NVDA"},
+    )
+    session.commit()
+
+    assert returned is repo.get_result(run.run_id)
+
+
+def test_success_cannot_be_overwritten_by_failure():
+    session = _session()
+    repo = AnalysisRunRepository(session)
+    run = repo.create_run(
+        ticker="NVDA",
+        trade_date=date(2026, 1, 15),
+        asset_type="stock",
+        analysts=["market"],
+    )
+    repo.store_success(
+        run_id=run.run_id,
+        decision="Hold",
+        reports={"final_trade_decision": "Rating: Hold"},
+        final_state={"company_of_interest": "NVDA"},
+    )
+
+    with pytest.raises(ValueError):
+        repo.store_failure(run.run_id, "provider failed")
+    session.commit()
+
+    saved = repo.get_run(run.run_id)
+    result = repo.get_result(run.run_id)
+    assert saved.status == "succeeded"
+    assert result.decision == "Hold"
+
+
+def test_failure_cannot_be_overwritten_by_success():
+    session = _session()
+    repo = AnalysisRunRepository(session)
+    run = repo.create_run(
+        ticker="NVDA",
+        trade_date=date(2026, 1, 15),
+        asset_type="stock",
+        analysts=["market"],
+    )
+    repo.store_failure(run.run_id, "provider failed")
+
+    with pytest.raises(ValueError):
+        repo.store_success(
+            run_id=run.run_id,
+            decision="Hold",
+            reports={"final_trade_decision": "Rating: Hold"},
+            final_state={"company_of_interest": "NVDA"},
+        )
+    session.commit()
+
+    saved = repo.get_run(run.run_id)
+    assert saved.status == "failed"
+    assert repo.get_result(run.run_id) is None
+
+
+def test_mark_running_is_idempotent_for_running_status():
+    session = _session()
+    repo = AnalysisRunRepository(session)
+    run = repo.create_run(
+        ticker="NVDA",
+        trade_date=date(2026, 1, 15),
+        asset_type="stock",
+        analysts=["market"],
+    )
+    repo.mark_running(run.run_id)
+    session.commit()
+    first_started_at = repo.get_run(run.run_id).started_at
+
+    repo.mark_running(run.run_id)
+    session.commit()
+
+    saved = repo.get_run(run.run_id)
+    event_types = [event.event_type for event in repo.list_events(run.run_id)]
+    assert saved.started_at == first_started_at
+    assert event_types == ["run_queued", "run_started"]
