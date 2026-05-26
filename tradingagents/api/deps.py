@@ -4,7 +4,7 @@ from collections.abc import Callable, Iterator
 
 from sqlalchemy.orm import Session
 
-from tradingagents.api.db import get_session
+from tradingagents.api.db import SessionLocal, get_session
 from tradingagents.worker.jobs import run_analysis_task
 
 
@@ -19,3 +19,7 @@ def enqueue_analysis_task(run_id: str) -> str:
 
 def get_task_enqueue() -> Callable[[str], str]:
     return enqueue_analysis_task
+
+
+def get_stream_session_factory():
+    return SessionLocal
