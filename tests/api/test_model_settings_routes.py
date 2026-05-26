@@ -6,6 +6,9 @@ from tradingagents.api.db import Base, create_db_engine
 from tradingagents.api.deps import get_db_session
 
 
+FERNET_KEY = "dBBj0g2y16HOVnBCwG9r20eyHmxtPXgvBXVHfJfRB4U="
+
+
 def _client():
     engine = create_db_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
@@ -70,6 +73,8 @@ def test_put_then_get_model_settings_for_current_user():
         "deep_think_llm": "gpt-5.4",
         "quick_think_llm": "gpt-5.4-mini",
         "backend_url": None,
+        "has_api_key": False,
+        "api_key_masked": None,
     }
 
 
@@ -107,3 +112,113 @@ def test_put_model_settings_rejects_invalid_backend_url():
     )
 
     assert response.status_code == 422
+
+
+def test_model_settings_stores_masks_preserves_and_clears_api_key(monkeypatch):
+    monkeypatch.setenv("MODEL_API_KEY_ENCRYPTION_KEY", FERNET_KEY)
+    client = _client()
+    csrf = _login(client)
+
+    response = client.put(
+        "/settings/model",
+        json={
+            "llm_provider": "openai",
+            "deep_think_llm": "gpt-5.4",
+            "quick_think_llm": "gpt-5.4-mini",
+            "backend_url": None,
+            "api_key": "sk-test-abcdef123456",
+        },
+        headers={"X-CSRF-Token": csrf},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["has_api_key"] is True
+    assert response.json()["api_key_masked"] == "sk-t...3456"
+    assert "abcdef123456" not in response.text
+
+    response = client.put(
+        "/settings/model",
+        json={
+            "llm_provider": "openai",
+            "deep_think_llm": "gpt-5.4",
+            "quick_think_llm": "gpt-5.4-mini",
+            "backend_url": None,
+        },
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert response.status_code == 200
+    assert response.json()["has_api_key"] is True
+
+    response = client.delete(
+        "/settings/model/api-key",
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert response.status_code == 204
+
+    response = client.get("/settings/model")
+    assert response.status_code == 200
+    assert response.json()["has_api_key"] is False
+    assert response.json()["api_key_masked"] is None
+
+
+def test_validate_model_settings_reports_user_service_and_missing_key(monkeypatch):
+    monkeypatch.setenv("MODEL_API_KEY_ENCRYPTION_KEY", FERNET_KEY)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    client = _client()
+    csrf = _login(client)
+
+    response = client.put(
+        "/settings/model",
+        json={
+            "llm_provider": "openai",
+            "deep_think_llm": "gpt-5.4",
+            "quick_think_llm": "gpt-5.4-mini",
+            "backend_url": None,
+        },
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert response.status_code == 200
+
+    missing = client.post(
+        "/settings/model/validate",
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert missing.status_code == 200
+    assert missing.json() == {
+        "valid": False,
+        "provider": "openai",
+        "required_env_var": "OPENAI_API_KEY",
+        "api_key_source": "none",
+        "message": "missing API key for provider openai",
+    }
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-service-abcdef123456")
+    service = client.post(
+        "/settings/model/validate",
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert service.status_code == 200
+    assert service.json()["valid"] is True
+    assert service.json()["api_key_source"] == "service"
+
+    response = client.put(
+        "/settings/model",
+        json={
+            "llm_provider": "openai",
+            "deep_think_llm": "gpt-5.4",
+            "quick_think_llm": "gpt-5.4-mini",
+            "backend_url": None,
+            "api_key": "sk-user-abcdef123456",
+        },
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert response.status_code == 200
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    user_key = client.post(
+        "/settings/model/validate",
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert user_key.status_code == 200
+    assert user_key.json()["valid"] is True
+    assert user_key.json()["api_key_source"] == "user"

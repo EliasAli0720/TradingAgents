@@ -270,7 +270,13 @@ data: {"run_id":"run_01J...","reason":"user requested cancellation"}
 POST /settings/validate
 ```
 
-该接口用于在创建长耗时任务之前，校验供应商名称、模型名称、必要 API key、数据供应商配置，以及基本的 ticker/date 输入。
+当前实现中的 `POST /settings/model/validate` 只校验当前用户模型配置是否具备可用密钥来源：用户加密密钥、服务端统一环境变量，或 provider 不需要密钥。它不会真实请求模型供应商。
+
+后续 TODO：
+
+- 新增模型 live probe：使用当前配置初始化 LLM client，发送短超时、低成本请求，例如要求返回固定字符串 `pong`。
+- live probe 需要区分 key 无效、模型不存在、endpoint 不通、权限不足、超时和供应商错误。
+- live probe 只能证明“模型可调用”，不能证明模型回答内容真实可靠。回答真实性需要业务层补充数据源引用、交叉验证、置信度标记和人工审核机制。
 
 ## 运行组件
 
@@ -309,13 +315,47 @@ Worker 层负责执行 `TradingAgentsGraph.propagate()`，并把进度、最终�
 - `started_at`
 - `finished_at`
 
-本地使用 SQLite 足够。生产环境更推荐 PostgreSQL。
+分析 API 的业务状态应使用 PostgreSQL。API/worker 运行时必须通过 `DATABASE_URL` 显式连接 PostgreSQL；SQLite 只保留给单元测试夹具和非 API 子系统的本地状态。
+
+本地开发推荐使用 Docker Compose 启动 PostgreSQL 和 Redis：
+
+```bash
+docker compose up -d postgres redis
+```
+
+宿主机直接运行 `uvicorn` / `celery` 时使用：
+
+```bash
+TRADINGAGENTS_API_ENV=development
+DATABASE_URL=postgresql+psycopg://tradingagents:tradingagents@localhost:5432/tradingagents
+REDIS_URL=redis://localhost:6379/0
+```
+
+Docker Compose 内部容器使用服务名连接：
+
+```bash
+DOCKER_DATABASE_URL=postgresql+psycopg://tradingagents:tradingagents@postgres:5432/tradingagents
+DOCKER_REDIS_URL=redis://redis:6379/0
+```
+
+生产环境必须显式提供托管服务连接：
+
+```bash
+TRADINGAGENTS_API_ENV=production
+DATABASE_URL=postgresql+psycopg://prod_user:prod_password@prod-postgres.example.com:5432/tradingagents
+REDIS_URL=redis://prod-redis.example.com:6379/0
+```
 
 ### 配置和密钥
 
-供应商 API key 和默认模型设置应该放在 TradingAgents 服务环境中，而不是由宿主项目在请求体中传入。
+供应商 API key 支持两种来源：
 
-宿主项目可以选择经过校验的安全选项，例如 ticker、日期、输出语言、分析师集合和允许的模型 profile。除非是内部可信部署，否则宿主项目不应该传入任意 backend URL 或密钥。
+- 服务端统一密钥：放在 TradingAgents 服务环境中，适合内部部署和统一计费。
+- 用户自己的密钥：通过模型设置接口保存，服务端用 `MODEL_API_KEY_ENCRYPTION_KEY` 加密落库，查询时只返回掩码。
+
+运行时优先使用用户自己的密钥；用户未配置时，回退使用服务端统一密钥。
+
+宿主项目可以选择经过校验的安全选项，例如 ticker、日期、输出语言、分析师集合和允许的模型 profile。除非是内部可信部署，否则宿主项目不应该传入任意 backend URL。
 
 ## 错误处理
 
@@ -392,7 +432,7 @@ def run_analysis(request: AnalysisRequest) -> AnalysisResult:
 - `GET /runs/{run_id}`
 - `GET /runs/{run_id}/result`
 
-第一版使用本地 SQLite 和简单 background worker。
+第一版使用 PostgreSQL 存储 run/event/result，并通过 worker 异步执行分析。
 
 ### 阶段三：进度事件
 

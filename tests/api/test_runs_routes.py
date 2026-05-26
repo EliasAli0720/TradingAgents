@@ -133,6 +133,7 @@ def test_post_runs_creates_run_and_enqueues_task():
             "deep_think_llm": "gpt-5.4",
             "quick_think_llm": "gpt-5.4-mini",
             "backend_url": None,
+            "api_key_encrypted": None,
         }
 
 

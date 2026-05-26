@@ -6,6 +6,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
+os.environ.setdefault("DATABASE_URL", "sqlite+pysqlite:///:memory:")
+os.environ.setdefault("TRADINGAGENTS_API_ENV", "test")
+
+
 def pytest_configure(config):
     for marker in ("unit", "integration", "smoke"):
         config.addinivalue_line("markers", f"{marker}: {marker}-level tests")

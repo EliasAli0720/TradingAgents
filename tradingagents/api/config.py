@@ -19,6 +19,7 @@ def _env_bool(name: str, default: bool) -> bool:
 class ApiSettings:
     database_url: str
     redis_url: str
+    model_api_key_encryption_key: Optional[str] = None
     task_time_limit_seconds: int = 3600
     session_ttl_days: int = 14
     session_cookie_name: str = "tradingagents_session"
@@ -30,13 +31,16 @@ class ApiSettings:
 
 def get_api_settings() -> ApiSettings:
     database_url = os.environ.get("DATABASE_URL")
-    environment = os.environ.get("TRADINGAGENTS_API_ENV", "development").lower()
-    if environment in {"production", "prod"} and not database_url:
-        raise RuntimeError("DATABASE_URL is required when TRADINGAGENTS_API_ENV=production")
+    if not database_url:
+        raise RuntimeError(
+            "DATABASE_URL is required. Use a PostgreSQL URL such as "
+            "postgresql+psycopg://user:password@host:5432/tradingagents"
+        )
 
     return ApiSettings(
-        database_url=database_url or "sqlite+pysqlite:///./tradingagents_api.db",
+        database_url=database_url,
         redis_url=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
+        model_api_key_encryption_key=os.environ.get("MODEL_API_KEY_ENCRYPTION_KEY") or None,
         task_time_limit_seconds=int(
             os.environ.get("TRADINGAGENTS_API_TASK_TIME_LIMIT_SECONDS", "3600")
         ),

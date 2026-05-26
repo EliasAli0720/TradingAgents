@@ -3,10 +3,35 @@ services:
     build: .
     env_file:
       - .env
+    environment:
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql+psycopg://tradingagents:tradingagents@postgres:5432/tradingagents}
+      REDIS_URL: ${DOCKER_REDIS_URL:-redis://redis:6379/0}
+    depends_on:
+      - postgres
+      - redis
     volumes:
       - tradingagents_data:/home/appuser/.tradingagents
     tty: true
     stdin_open: true
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: tradingagents
+      POSTGRES_USER: tradingagents
+      POSTGRES_PASSWORD: tradingagents
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
 
   ollama:
     image: ollama/ollama:latest
@@ -21,10 +46,14 @@ services:
       - .env
     environment:
       - LLM_PROVIDER=ollama
+      - DATABASE_URL=${DOCKER_DATABASE_URL:-postgresql+psycopg://tradingagents:tradingagents@postgres:5432/tradingagents}
+      - REDIS_URL=${DOCKER_REDIS_URL:-redis://redis:6379/0}
     volumes:
       - tradingagents_data:/home/appuser/.tradingagents
     depends_on:
       - ollama
+      - postgres
+      - redis
     tty: true
     stdin_open: true
     profiles:
@@ -33,3 +62,5 @@ services:
 volumes:
   tradingagents_data:
   ollama_data:
+  postgres_data:
+  redis_data:

@@ -4,6 +4,7 @@ from copy import deepcopy
 from datetime import date
 from typing import Any
 
+from tradingagents.api.crypto import decrypt_secret
 from tradingagents.api.serialization import extract_reports, json_safe_state
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph.trading_graph import TradingAgentsGraph
@@ -25,6 +26,8 @@ def run_tradingagents_analysis(
             "backend_url": llm_config.get("backend_url"),
         }
     )
+    if llm_config.get("api_key_encrypted"):
+        config["api_key"] = decrypt_secret(llm_config["api_key_encrypted"])
     graph = TradingAgentsGraph(selected_analysts=analysts, config=config)
     final_state, decision = graph.propagate(
         ticker,

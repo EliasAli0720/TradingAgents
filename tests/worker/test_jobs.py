@@ -7,10 +7,16 @@ import pytest
 from sqlalchemy.orm import sessionmaker
 
 from tradingagents.api.db import Base, create_db_engine
+from tradingagents.api.crypto import encrypt_secret
 from tradingagents.api.repositories import AnalysisRunRepository
 from tradingagents.api.serialization import extract_reports, json_safe_state
+from tradingagents.graph.trading_graph import TradingAgentsGraph
+from tradingagents.worker.analysis import run_tradingagents_analysis
 from tradingagents.worker.celery_app import celery_app
 from tradingagents.worker.jobs import execute_analysis_run
+
+
+FERNET_KEY = "dBBj0g2y16HOVnBCwG9r20eyHmxtPXgvBXVHfJfRB4U="
 
 
 def _repo():
@@ -201,3 +207,45 @@ def test_celery_app_registers_analysis_task():
     )
 
     assert result.returncode == 0, result.stderr
+
+
+def test_run_tradingagents_analysis_decrypts_user_api_key_snapshot(monkeypatch):
+    monkeypatch.setenv("MODEL_API_KEY_ENCRYPTION_KEY", FERNET_KEY)
+    captured_configs = []
+
+    class FakeGraph:
+        def __init__(self, selected_analysts, config):
+            captured_configs.append((selected_analysts, config))
+
+        def propagate(self, ticker, trade_date, asset_type):
+            return ({"final_trade_decision": "Hold"}, "Hold")
+
+    monkeypatch.setattr("tradingagents.worker.analysis.TradingAgentsGraph", FakeGraph)
+    llm_config = {
+        **LLM_CONFIG,
+        "api_key_encrypted": encrypt_secret("sk-user-abcdef123456"),
+    }
+
+    output = run_tradingagents_analysis(
+        "NVDA",
+        date(2026, 1, 15),
+        "stock",
+        ["market"],
+        llm_config,
+    )
+
+    assert output["decision"] == "Hold"
+    assert captured_configs[0][0] == ["market"]
+    assert captured_configs[0][1]["api_key"] == "sk-user-abcdef123456"
+
+
+def test_trading_graph_provider_kwargs_include_snapshot_api_key():
+    graph = object.__new__(TradingAgentsGraph)
+    graph.config = {
+        "llm_provider": "openai",
+        "api_key": "sk-user-abcdef123456",
+        "openai_reasoning_effort": "low",
+    }
+
+    assert graph._get_provider_kwargs()["api_key"] == "sk-user-abcdef123456"
+    assert graph._get_provider_kwargs()["reasoning_effort"] == "low"

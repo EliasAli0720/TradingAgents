@@ -11,6 +11,29 @@ def test_production_requires_database_url(monkeypatch):
         get_api_settings()
 
 
+def test_development_requires_database_url(monkeypatch):
+    monkeypatch.setenv("TRADINGAGENTS_API_ENV", "development")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    with pytest.raises(RuntimeError, match="DATABASE_URL"):
+        get_api_settings()
+
+
+def test_database_url_uses_postgresql_env(monkeypatch):
+    monkeypatch.setenv("TRADINGAGENTS_API_ENV", "development")
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql+psycopg://tradingagents:secret@postgres:5432/tradingagents",
+    )
+
+    settings = get_api_settings()
+
+    assert (
+        settings.database_url
+        == "postgresql+psycopg://tradingagents:secret@postgres:5432/tradingagents"
+    )
+
+
 def test_auth_defaults(monkeypatch):
     for key in [
         "TRADINGAGENTS_API_SESSION_TTL_DAYS",

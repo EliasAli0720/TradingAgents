@@ -115,6 +115,7 @@ class ModelSettingsRequest(BaseModel):
     deep_think_llm: str
     quick_think_llm: str
     backend_url: Optional[str] = None
+    api_key: Optional[str] = None
 
     @field_validator("llm_provider")
     @classmethod
@@ -144,12 +145,32 @@ class ModelSettingsRequest(BaseModel):
             raise ValueError("backend_url must start with http:// or https://")
         return url
 
+    @field_validator("api_key")
+    @classmethod
+    def validate_api_key(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        api_key = value.strip()
+        if not api_key:
+            return None
+        return api_key
+
 
 class ModelSettingsResponse(BaseModel):
     llm_provider: str
     deep_think_llm: str
     quick_think_llm: str
     backend_url: Optional[str]
+    has_api_key: bool
+    api_key_masked: Optional[str]
+
+
+class ModelSettingsValidationResponse(BaseModel):
+    valid: bool
+    provider: str
+    required_env_var: Optional[str]
+    api_key_source: Literal["user", "service", "none", "not_required"]
+    message: str
 
 
 UserRole = Literal["admin", "operator", "viewer"]

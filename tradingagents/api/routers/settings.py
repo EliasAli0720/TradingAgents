@@ -1,15 +1,38 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+import os
+
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
+from tradingagents.llm_clients.api_key_env import get_api_key_env
+from tradingagents.api.crypto import decrypt_secret
 from tradingagents.api.deps import get_current_user, get_db_session
 from tradingagents.api.model_settings_repository import UserModelSettingsRepository
 from tradingagents.api.models import User
-from tradingagents.api.schemas import ModelSettingsRequest, ModelSettingsResponse
+from tradingagents.api.schemas import (
+    ModelSettingsRequest,
+    ModelSettingsResponse,
+    ModelSettingsValidationResponse,
+)
 
 
 router = APIRouter(prefix="/settings", tags=["settings"])
+
+
+def _response_for_settings(
+    repo: UserModelSettingsRepository,
+    settings,
+) -> ModelSettingsResponse:
+    metadata = repo.api_key_metadata(settings)
+    return ModelSettingsResponse(
+        llm_provider=settings.llm_provider,
+        deep_think_llm=settings.deep_think_llm,
+        quick_think_llm=settings.quick_think_llm,
+        backend_url=settings.backend_url,
+        has_api_key=bool(metadata["has_api_key"]),
+        api_key_masked=metadata["api_key_masked"],
+    )
 
 
 @router.get("/model", response_model=ModelSettingsResponse)
@@ -17,15 +40,11 @@ def get_model_settings(
     session: Session = Depends(get_db_session),
     user: User = Depends(get_current_user),
 ):
-    settings = UserModelSettingsRepository(session).get(user.user_id)
+    repo = UserModelSettingsRepository(session)
+    settings = repo.get(user.user_id)
     if settings is None:
         raise HTTPException(status_code=404, detail="model settings not configured")
-    return ModelSettingsResponse(
-        llm_provider=settings.llm_provider,
-        deep_think_llm=settings.deep_think_llm,
-        quick_think_llm=settings.quick_think_llm,
-        backend_url=settings.backend_url,
-    )
+    return _response_for_settings(repo, settings)
 
 
 @router.put("/model", response_model=ModelSettingsResponse)
@@ -34,17 +53,70 @@ def put_model_settings(
     session: Session = Depends(get_db_session),
     user: User = Depends(get_current_user),
 ):
-    settings = UserModelSettingsRepository(session).upsert(
+    repo = UserModelSettingsRepository(session)
+    settings = repo.upsert(
         user_id=user.user_id,
         llm_provider=request.llm_provider,
         deep_think_llm=request.deep_think_llm,
         quick_think_llm=request.quick_think_llm,
         backend_url=request.backend_url,
+        api_key=request.api_key,
     )
     session.commit()
-    return ModelSettingsResponse(
-        llm_provider=settings.llm_provider,
-        deep_think_llm=settings.deep_think_llm,
-        quick_think_llm=settings.quick_think_llm,
-        backend_url=settings.backend_url,
+    return _response_for_settings(repo, settings)
+
+
+@router.delete("/model/api-key", status_code=status.HTTP_204_NO_CONTENT)
+def delete_model_api_key(
+    session: Session = Depends(get_db_session),
+    user: User = Depends(get_current_user),
+):
+    settings = UserModelSettingsRepository(session).clear_api_key(user.user_id)
+    if settings is None:
+        raise HTTPException(status_code=404, detail="model settings not configured")
+    session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/model/validate", response_model=ModelSettingsValidationResponse)
+def validate_model_settings(
+    session: Session = Depends(get_db_session),
+    user: User = Depends(get_current_user),
+):
+    settings = UserModelSettingsRepository(session).get(user.user_id)
+    if settings is None:
+        raise HTTPException(status_code=404, detail="model settings not configured")
+
+    required_env_var = get_api_key_env(settings.llm_provider)
+    if settings.encrypted_api_key:
+        decrypt_secret(settings.encrypted_api_key)
+        return ModelSettingsValidationResponse(
+            valid=True,
+            provider=settings.llm_provider,
+            required_env_var=required_env_var,
+            api_key_source="user",
+            message=f"user API key configured for provider {settings.llm_provider}",
+        )
+    if required_env_var is None:
+        return ModelSettingsValidationResponse(
+            valid=True,
+            provider=settings.llm_provider,
+            required_env_var=None,
+            api_key_source="not_required",
+            message=f"provider {settings.llm_provider} does not require an API key",
+        )
+    if os.environ.get(required_env_var):
+        return ModelSettingsValidationResponse(
+            valid=True,
+            provider=settings.llm_provider,
+            required_env_var=required_env_var,
+            api_key_source="service",
+            message=f"service API key configured in {required_env_var}",
+        )
+    return ModelSettingsValidationResponse(
+        valid=False,
+        provider=settings.llm_provider,
+        required_env_var=required_env_var,
+        api_key_source="none",
+        message=f"missing API key for provider {settings.llm_provider}",
     )

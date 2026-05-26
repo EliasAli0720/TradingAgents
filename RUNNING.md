@@ -59,6 +59,20 @@ ALPHA_VANTAGE_API_KEY=...   # 可选；缺失时 yfinance 兜底
 
 支持的 provider 见 README "Required APIs"。`Ollama` 本地模型不需要密钥，配 `OLLAMA_BASE_URL` 即可。
 
+如果要通过 API 页面保存“用户自己的模型 API key”，还必须配置密钥加密用的 Fernet key：
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+把输出写入 `.env`：
+
+```bash
+MODEL_API_KEY_ENCRYPTION_KEY=生成出来的值
+```
+
+当前模型密钥优先级：用户保存的加密密钥优先；用户没有保存时，worker 回退使用服务端 `.env` 里的 provider 环境变量。
+
 ### 1.4 可选：调默认配置
 
 `.env` 里加 `TRADINGAGENTS_*` 直接覆盖 `tradingagents/default_config.py`：
@@ -373,6 +387,8 @@ server {
 
 ### 分析 HTTP API 部署补充（`tradingagents.api`）
 
+- **环境区分**：本地开发使用 `TRADINGAGENTS_API_ENV=development`，宿主机进程连接 `DATABASE_URL=postgresql+psycopg://tradingagents:tradingagents@localhost:5432/tradingagents` 和 `REDIS_URL=redis://localhost:6379/0`；Docker Compose 容器内通过 `DOCKER_DATABASE_URL` / `DOCKER_REDIS_URL` 连接服务名 `postgres` / `redis`；生产使用 `TRADINGAGENTS_API_ENV=production` 并显式提供生产 PostgreSQL/Redis 连接。
+- **本地一键启动**：运行 `./start.sh api` 会启动 Docker PostgreSQL/Redis、初始化 PostgreSQL 表，并启动 FastAPI 与 Celery worker。脚本保持前台运行；按 `Ctrl-C` 会停止 API/worker，保留数据库容器。另一个终端可运行 `./start.sh api-status` 查看状态，或 `./start.sh api-stop` 停止 API/worker。
 - **必须走 HTTPS**：API 下发的 `tradingagents_session` cookie 默认 `Secure`，明文 HTTP 下浏览器会丢弃；本地开发可暂时 `TRADINGAGENTS_API_COOKIE_SECURE=false`，生产**禁止关闭**。
 - **CSRF**：状态变更（`POST/PATCH/DELETE`）必须同时携带 cookie `tradingagents_csrf` 与请求头 `X-CSRF-Token`，二者字符串相等。前端 JS 可读 csrf cookie，session cookie 是 `HttpOnly` 拿不到。
 - **首位注册即 admin**：表内零用户时 `POST /auth/register` 自动赋 `admin`，其后默认 `viewer`，需 admin 通过 `PATCH /admin/users/{id}` 提升。

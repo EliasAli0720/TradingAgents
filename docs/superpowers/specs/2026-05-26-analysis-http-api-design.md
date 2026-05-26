@@ -324,12 +324,12 @@ run_analysis_task(run_id: str) -> None
 环境变量：
 
 - `TRADINGAGENTS_API_ENV`：运行环境。生产环境设置为 `production`。
-- `DATABASE_URL`：PostgreSQL 连接字符串。
+- `DATABASE_URL`：PostgreSQL 连接字符串。API/worker 运行时必须显式提供。
 - `REDIS_URL`：Redis 连接字符串，用于 Celery broker 和 result backend。
 - `TRADINGAGENTS_API_TASK_TIME_LIMIT_SECONDS`：Celery hard time limit，默认 `3600`。
 - `TRADINGAGENTS_API_WORKER_CONCURRENCY`：文档化的部署参数，推荐默认值为 `1`。
 
-当 `TRADINGAGENTS_API_ENV=production` 时，服务启动必须提供 `DATABASE_URL`。开发和测试环境可以使用默认 SQLite 连接，便于本地快速运行。
+API/worker 运行时不再使用默认 SQLite。开发和生产环境都必须提供 PostgreSQL `DATABASE_URL`；单元测试可以在测试夹具中显式传入 in-memory SQLite，以避免依赖外部服务。
 
 现有 TradingAgents 环境变量仍由服务端控制：
 

@@ -111,5 +111,6 @@ class UserModelSetting(Base):
     deep_think_llm: Mapped[str] = mapped_column(String, nullable=False)
     quick_think_llm: Mapped[str] = mapped_column(String, nullable=False)
     backend_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    encrypted_api_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
