@@ -21,6 +21,14 @@ def _repo():
     return session, AnalysisRunRepository(session)
 
 
+LLM_CONFIG = {
+    "llm_provider": "openai",
+    "deep_think_llm": "gpt-5.4",
+    "quick_think_llm": "gpt-5.4-mini",
+    "backend_url": None,
+}
+
+
 def test_extract_reports_keeps_expected_report_keys():
     state = {
         "market_report": "market",
@@ -71,12 +79,14 @@ def test_json_safe_state_returns_strict_json_for_nested_values():
 
 def test_execute_analysis_run_success_writes_result():
     session, repo = _repo()
-    run = repo.create_run("NVDA", date(2026, 1, 15), "stock", ["market"])
+    run = repo.create_run(
+        "NVDA", date(2026, 1, 15), "stock", ["market"], llm_config=LLM_CONFIG
+    )
     session.commit()
     calls = []
 
-    def fake_executor(ticker, trade_date, asset_type, analysts):
-        calls.append((ticker, trade_date, asset_type, analysts))
+    def fake_executor(ticker, trade_date, asset_type, analysts, llm_config):
+        calls.append((ticker, trade_date, asset_type, analysts, llm_config))
         return {
             "decision": "Hold",
             "reports": {"final_trade_decision": "Rating: Hold"},
@@ -88,7 +98,7 @@ def test_execute_analysis_run_success_writes_result():
 
     assert repo.get_run(run.run_id).status == "succeeded"
     assert repo.get_result(run.run_id).decision == "Hold"
-    assert calls == [("NVDA", date(2026, 1, 15), "stock", ["market"])]
+    assert calls == [("NVDA", date(2026, 1, 15), "stock", ["market"], LLM_CONFIG)]
     assert [event.event_type for event in repo.list_events(run.run_id)] == [
         "run_queued",
         "run_started",
@@ -98,10 +108,12 @@ def test_execute_analysis_run_success_writes_result():
 
 def test_execute_analysis_run_failure_writes_error():
     session, repo = _repo()
-    run = repo.create_run("NVDA", date(2026, 1, 15), "stock", ["market"])
+    run = repo.create_run(
+        "NVDA", date(2026, 1, 15), "stock", ["market"], llm_config=LLM_CONFIG
+    )
     session.commit()
 
-    def fake_executor(ticker, trade_date, asset_type, analysts):
+    def fake_executor(ticker, trade_date, asset_type, analysts, llm_config):
         raise RuntimeError("provider failed")
 
     with pytest.raises(RuntimeError, match="provider failed"):
@@ -116,7 +128,9 @@ def test_execute_analysis_run_failure_writes_error():
 
 def test_execute_analysis_run_claims_queued_run_once():
     session, repo = _repo()
-    run = repo.create_run("NVDA", date(2026, 1, 15), "stock", ["market"])
+    run = repo.create_run(
+        "NVDA", date(2026, 1, 15), "stock", ["market"], llm_config=LLM_CONFIG
+    )
     session.commit()
 
     claimed = repo.claim_queued_run(run.run_id)
@@ -124,6 +138,23 @@ def test_execute_analysis_run_claims_queued_run_once():
 
     assert claimed is not None
     assert repo.claim_queued_run(run.run_id) is None
+
+
+def test_execute_analysis_run_without_model_config_marks_failed():
+    session, repo = _repo()
+    run = repo.create_run("NVDA", date(2026, 1, 15), "stock", ["market"])
+    session.commit()
+
+    def fake_executor(ticker, trade_date, asset_type, analysts, llm_config):
+        raise AssertionError("executor should not run")
+
+    with pytest.raises(RuntimeError, match="model settings snapshot missing"):
+        execute_analysis_run(repo, run.run_id, fake_executor)
+    session.commit()
+
+    saved = repo.get_run(run.run_id)
+    assert saved.status == "failed"
+    assert saved.error == "model settings snapshot missing"
 
 
 def test_celery_app_registers_analysis_task():

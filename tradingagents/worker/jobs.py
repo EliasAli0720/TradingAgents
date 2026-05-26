@@ -10,7 +10,7 @@ from tradingagents.worker.analysis import run_tradingagents_analysis
 from tradingagents.worker.celery_app import celery_app
 
 
-AnalysisExecutor = Callable[[str, date, str, list[str]], dict[str, Any]]
+AnalysisExecutor = Callable[[str, date, str, list[str], dict[str, Any]], dict[str, Any]]
 
 
 def execute_analysis_run(
@@ -24,7 +24,15 @@ def execute_analysis_run(
 
     try:
         repo.session.commit()
-        output = executor(run.ticker, run.trade_date, run.asset_type, run.analysts)
+        if run.llm_config is None:
+            raise RuntimeError("model settings snapshot missing")
+        output = executor(
+            run.ticker,
+            run.trade_date,
+            run.asset_type,
+            run.analysts,
+            run.llm_config,
+        )
         repo.store_success(
             run_id=run_id,
             decision=output["decision"],

@@ -14,8 +14,17 @@ def run_tradingagents_analysis(
     trade_date: date,
     asset_type: str,
     analysts: list[str],
+    llm_config: dict[str, Any],
 ) -> dict[str, Any]:
     config = deepcopy(DEFAULT_CONFIG)
+    config.update(
+        {
+            "llm_provider": llm_config["llm_provider"],
+            "deep_think_llm": llm_config["deep_think_llm"],
+            "quick_think_llm": llm_config["quick_think_llm"],
+            "backend_url": llm_config.get("backend_url"),
+        }
+    )
     graph = TradingAgentsGraph(selected_analysts=analysts, config=config)
     final_state, decision = graph.propagate(
         ticker,
