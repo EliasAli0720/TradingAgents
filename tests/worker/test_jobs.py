@@ -157,6 +157,35 @@ def test_execute_analysis_run_without_model_config_marks_failed():
     assert saved.error == "model settings snapshot missing"
 
 
+def test_execute_analysis_run_does_not_overwrite_cancelled_run_after_executor_returns():
+    session, repo = _repo()
+    run = repo.create_run(
+        "NVDA", date(2026, 1, 15), "stock", ["market"], llm_config=LLM_CONFIG
+    )
+    session.commit()
+
+    def fake_executor(ticker, trade_date, asset_type, analysts, llm_config):
+        repo.cancel_run(run.run_id, "user requested cancellation")
+        session.commit()
+        return {
+            "decision": "Hold",
+            "reports": {"final_trade_decision": "Rating: Hold"},
+            "final_state": {"company_of_interest": ticker},
+        }
+
+    execute_analysis_run(repo, run.run_id, fake_executor)
+    session.commit()
+
+    saved = repo.get_run(run.run_id)
+    assert saved.status == "cancelled"
+    assert repo.get_result(run.run_id) is None
+    assert [event.event_type for event in repo.list_events(run.run_id)] == [
+        "run_queued",
+        "run_started",
+        "run_cancelled",
+    ]
+
+
 def test_celery_app_registers_analysis_task():
     script = (
         "from tradingagents.worker.celery_app import celery_app;"

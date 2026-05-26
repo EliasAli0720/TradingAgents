@@ -5,7 +5,7 @@ from sqlalchemy.orm import sessionmaker
 
 from tradingagents.api.app import create_app
 from tradingagents.api.db import Base, create_db_engine
-from tradingagents.api.deps import get_db_session, get_task_enqueue
+from tradingagents.api.deps import get_db_session, get_task_enqueue, get_task_revoke
 from tradingagents.api.models import AnalysisRun
 from tradingagents.api.repositories import AnalysisRunRepository
 
@@ -230,3 +230,79 @@ def test_post_runs_enqueue_failure_marks_run_failed():
         assert run.status == "failed"
         assert run.error == "redis unavailable"
         assert body["detail"]["run_id"] == run.run_id
+
+
+def test_post_cancel_queued_run_marks_cancelled_and_revokes_task():
+    client, Session, _ = _client()
+    revoked = []
+    client.app.dependency_overrides[get_task_revoke] = lambda: revoked.append
+
+    with Session() as session:
+        repo = AnalysisRunRepository(session)
+        run = repo.create_run("NVDA", date(2026, 1, 15), "stock", ["market"])
+        repo.set_celery_task_id(run.run_id, "celery-test-id")
+        run_id = run.run_id
+        session.commit()
+
+    response = client.post(f"/runs/{run_id}/cancel")
+
+    assert response.status_code == 200
+    assert response.json() == {"run_id": run_id, "status": "cancelled"}
+    assert revoked == ["celery-test-id"]
+    with Session() as session:
+        saved = AnalysisRunRepository(session).get_run(run_id)
+        assert saved.status == "cancelled"
+
+
+def test_post_cancel_missing_run_returns_404():
+    client, _Session, _ = _client()
+
+    response = client.post("/runs/run_missing/cancel")
+
+    assert response.status_code == 404
+
+
+def test_post_cancel_succeeded_run_returns_409():
+    client, Session, _ = _client()
+    with Session() as session:
+        repo = AnalysisRunRepository(session)
+        run = repo.create_run("NVDA", date(2026, 1, 15), "stock", ["market"])
+        repo.store_success(run.run_id, "Hold", {}, {})
+        run_id = run.run_id
+        session.commit()
+
+    response = client.post(f"/runs/{run_id}/cancel")
+
+    assert response.status_code == 409
+
+
+def test_post_cancel_requires_authentication():
+    engine = create_db_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine, future=True)
+
+    def override_session():
+        with Session() as session:
+            yield session
+
+    app = create_app()
+    app.dependency_overrides[get_db_session] = override_session
+    client = TestClient(app)
+
+    response = client.post("/runs/run_any/cancel")
+
+    assert response.status_code == 401
+
+
+def test_post_cancel_missing_csrf_returns_403():
+    client, Session, _ = _client()
+    client.headers.pop("X-CSRF-Token", None)
+    with Session() as session:
+        repo = AnalysisRunRepository(session)
+        run = repo.create_run("NVDA", date(2026, 1, 15), "stock", ["market"])
+        run_id = run.run_id
+        session.commit()
+
+    response = client.post(f"/runs/{run_id}/cancel")
+
+    assert response.status_code == 403

@@ -49,6 +49,14 @@ def get_task_enqueue() -> Callable[[str], str]:
     return enqueue_analysis_task
 
 
+def revoke_analysis_task(task_id: str) -> None:
+    run_analysis_task.app.control.revoke(task_id)
+
+
+def get_task_revoke() -> Callable[[str], None]:
+    return revoke_analysis_task
+
+
 def get_stream_session_factory():
     return SessionLocal
 

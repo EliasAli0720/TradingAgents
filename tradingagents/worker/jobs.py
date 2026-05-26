@@ -33,6 +33,10 @@ def execute_analysis_run(
             run.analysts,
             run.llm_config,
         )
+        repo.session.refresh(run)
+        if run.status == "cancelled":
+            repo.session.commit()
+            return
         repo.store_success(
             run_id=run_id,
             decision=output["decision"],

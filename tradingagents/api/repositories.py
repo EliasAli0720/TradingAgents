@@ -10,6 +10,9 @@ from sqlalchemy.orm import Session
 from tradingagents.api.models import AnalysisRun, AnalysisRunEvent, AnalysisRunResult
 
 
+TERMINAL_STATUSES = {"succeeded", "failed", "cancelled"}
+
+
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -72,7 +75,9 @@ class AnalysisRunRepository:
         run = self.require_run(run_id)
         if run.status == "running":
             return run
-        if run.status in {"succeeded", "failed"}:
+        if run.status == "cancelled":
+            raise ValueError(f"Cannot mark cancelled run {run_id} as running")
+        if run.status in TERMINAL_STATUSES:
             raise ValueError(f"Cannot mark terminal run {run_id} as running")
 
         run.status = "running"
@@ -108,8 +113,8 @@ class AnalysisRunRepository:
             result = self.get_result(run_id)
             if result is not None:
                 return result
-        if run.status == "failed":
-            raise ValueError(f"Cannot mark failed run {run_id} as succeeded")
+        if run.status in {"failed", "cancelled"}:
+            raise ValueError(f"Cannot mark {run.status} run {run_id} as succeeded")
 
         result = AnalysisRunResult(
             run_id=run_id,
@@ -130,14 +135,28 @@ class AnalysisRunRepository:
         run = self.require_run(run_id)
         if run.status == "failed":
             return
-        if run.status == "succeeded":
-            raise ValueError(f"Cannot mark succeeded run {run_id} as failed")
+        if run.status in {"succeeded", "cancelled"}:
+            raise ValueError(f"Cannot mark {run.status} run {run_id} as failed")
 
         run.status = "failed"
         run.finished_at = utcnow()
         run.current_step = "Failed"
         run.error = error
         self.add_event(run_id, "run_failed", {"run_id": run_id, "error": error})
+
+    def cancel_run(self, run_id: str, reason: str = "run cancelled") -> AnalysisRun:
+        run = self.require_run(run_id)
+        if run.status == "cancelled":
+            return run
+        if run.status in {"succeeded", "failed"}:
+            raise ValueError(f"Cannot cancel terminal run {run_id}")
+
+        run.status = "cancelled"
+        run.finished_at = utcnow()
+        run.current_step = "Cancelled"
+        run.error = reason
+        self.add_event(run_id, "run_cancelled", {"run_id": run_id, "reason": reason})
+        return run
 
     def get_result(self, run_id: str) -> Optional[AnalysisRunResult]:
         if self.user_id is not None and self.get_run(run_id) is None:

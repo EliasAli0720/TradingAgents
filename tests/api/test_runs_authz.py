@@ -1,9 +1,12 @@
+from datetime import date
+
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
 
 from tradingagents.api.app import create_app
 from tradingagents.api.db import Base, create_db_engine
 from tradingagents.api.deps import get_db_session, get_task_enqueue
+from tradingagents.api.repositories import AnalysisRunRepository
 
 
 def _build_app():
@@ -143,3 +146,26 @@ def test_post_runs_without_csrf_blocked():
         },
     )
     assert r.status_code == 403
+
+
+def test_viewer_cannot_cancel_run():
+    app, Session = _build_app()
+    admin = TestClient(app)
+    _register_login(admin, "alice")
+
+    with Session() as session:
+        repo = AnalysisRunRepository(session)
+        run = repo.create_run("NVDA", date(2026, 1, 15), "stock", ["market"])
+        run_id = run.run_id
+        session.commit()
+
+    viewer = TestClient(app)
+    _register_login(viewer, "bob")
+    csrf = viewer.cookies.get("tradingagents_csrf")
+
+    response = viewer.post(
+        f"/runs/{run_id}/cancel",
+        headers={"X-CSRF-Token": csrf},
+    )
+
+    assert response.status_code == 403

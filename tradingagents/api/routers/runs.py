@@ -14,11 +14,13 @@ from tradingagents.api.deps import (
     get_scoped_repository,
     get_stream_session_factory,
     get_task_enqueue,
+    get_task_revoke,
     require_role,
 )
 from tradingagents.api.models import User
 from tradingagents.api.repositories import AnalysisRunRepository
 from tradingagents.api.schemas import (
+    CancelRunResponse,
     CreateRunRequest,
     CreateRunResponse,
     RunResultResponse,
@@ -62,6 +64,31 @@ def create_run(
     repo.set_celery_task_id(run.run_id, task_id)
     session.commit()
     return CreateRunResponse(run_id=run.run_id, status="queued")
+
+
+@router.post("/{run_id}/cancel", response_model=CancelRunResponse)
+def cancel_run(
+    run_id: str,
+    repo: AnalysisRunRepository = Depends(get_scoped_repository),
+    revoke=Depends(get_task_revoke),
+    _user: User = Depends(require_role("admin", "operator")),
+):
+    run = repo.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    if run.status in {"succeeded", "failed"}:
+        raise HTTPException(status_code=409, detail=f"run is already {run.status}")
+
+    task_id = run.celery_task_id
+    try:
+        cancelled = repo.cancel_run(run_id, "user requested cancellation")
+        repo.session.commit()
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    if task_id:
+        revoke(task_id)
+    return CancelRunResponse(run_id=cancelled.run_id, status="cancelled")
 
 
 @router.get("/{run_id}", response_model=RunStatusResponse)
@@ -132,7 +159,11 @@ async def stream_events(
                     last_id = event.id
                     yield f"event: {event.event_type}\n"
                     yield f"data: {json.dumps(event.payload)}\n\n"
-                    if event.event_type in {"run_succeeded", "run_failed"}:
+                    if event.event_type in {
+                        "run_succeeded",
+                        "run_failed",
+                        "run_cancelled",
+                    }:
                         terminal = True
             if not terminal:
                 await asyncio.sleep(1)

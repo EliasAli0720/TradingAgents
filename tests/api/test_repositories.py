@@ -178,6 +178,69 @@ def test_repository_stores_failure():
     assert repo.list_events(run.run_id)[-1].event_type == "run_failed"
 
 
+def test_repository_cancels_queued_run():
+    session = _session()
+    repo = AnalysisRunRepository(session)
+    run = repo.create_run(
+        ticker="NVDA",
+        trade_date=date(2026, 1, 15),
+        asset_type="stock",
+        analysts=["market"],
+    )
+
+    cancelled = repo.cancel_run(run.run_id, "user requested cancellation")
+    session.commit()
+
+    assert cancelled.status == "cancelled"
+    assert cancelled.finished_at is not None
+    assert cancelled.current_step == "Cancelled"
+    assert cancelled.error == "user requested cancellation"
+    assert repo.list_events(run.run_id)[-1].event_type == "run_cancelled"
+
+
+def test_repository_cancels_running_run():
+    session = _session()
+    repo = AnalysisRunRepository(session)
+    run = repo.create_run(
+        ticker="NVDA",
+        trade_date=date(2026, 1, 15),
+        asset_type="stock",
+        analysts=["market"],
+    )
+    repo.mark_running(run.run_id)
+
+    repo.cancel_run(run.run_id, "user requested cancellation")
+    session.commit()
+
+    saved = repo.get_run(run.run_id)
+    assert saved.status == "cancelled"
+    assert saved.current_step == "Cancelled"
+    assert [event.event_type for event in repo.list_events(run.run_id)] == [
+        "run_queued",
+        "run_started",
+        "run_cancelled",
+    ]
+
+
+def test_cancelled_run_cannot_be_marked_successful_or_failed_or_running():
+    session = _session()
+    repo = AnalysisRunRepository(session)
+    run = repo.create_run(
+        ticker="NVDA",
+        trade_date=date(2026, 1, 15),
+        asset_type="stock",
+        analysts=["market"],
+    )
+    repo.cancel_run(run.run_id, "user requested cancellation")
+
+    with pytest.raises(ValueError, match="cancelled"):
+        repo.mark_running(run.run_id)
+    with pytest.raises(ValueError, match="cancelled"):
+        repo.store_success(run.run_id, "Hold", {}, {})
+    with pytest.raises(ValueError, match="cancelled"):
+        repo.store_failure(run.run_id, "provider failed")
+
+
 def test_store_success_returns_persistent_result():
     session = _session()
     repo = AnalysisRunRepository(session)
