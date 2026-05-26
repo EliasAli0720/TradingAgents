@@ -30,18 +30,24 @@ dependencies = [
     "tqdm>=4.67.1",
     "typing-extensions>=4.14.0",
     "yfinance>=0.2.63",
-    # Auto-trading bot dependencies
     "alpaca-py>=0.38.0",
     "apscheduler>=3.10.0",
     "streamlit>=1.45.0",
     "plotly>=6.0.0",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.34.0",
+    "celery>=5.4.0",
+    "sqlalchemy>=2.0.0",
+    "psycopg[binary]>=3.2.0",
+    "httpx>=0.28.0",
+    "pytest>=8.0.0",
 ]
 
 [project.scripts]
 tradingagents = "cli.main:app"
 
 [tool.setuptools.packages.find]
-include = ["tradingagents*", "cli*"]
+include = ["tradingagents*", "tradingbot*", "cli*"]
 
 [tool.setuptools.package-data]
 cli = ["static/*"]
