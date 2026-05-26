@@ -1,37 +1,37 @@
-# TradingAgents Analysis HTTP API Design
+# TradingAgents 分析 HTTP API 设计
 
-Date: 2026-05-26
+日期：2026-05-26
 
-Branch: `phase/6-login-page`
+分支：`phase/6-login-page`
 
-## Objective
+## 目标
 
-Expose the core TradingAgents multi-agent analysis engine as a deployable HTTP service so external clients can submit analysis jobs, poll status, stream progress events, and fetch final reports over HTTP.
+把 TradingAgents 的核心多智能体分析引擎包装成一个可部署的 HTTP 服务，让外部客户端可以通过 HTTP 提交分析任务、查询状态、订阅进度事件，并获取最终分析报告。
 
-The first version only exposes analysis. It does not expose automatic trading, broker access, portfolio mutation, order placement, or account management.
+第一版只暴露分析能力。不暴露自动交易、Broker 访问、组合变更、下单或账户管理能力。
 
-## Confirmed Decisions
+## 已确认决策
 
-- Service style: asynchronous task API.
-- HTTP framework: FastAPI.
-- Task runner: Celery.
-- Queue and Celery result backend: Redis.
-- Durable business storage: PostgreSQL.
-- Realtime progress: Server-Sent Events.
-- Application-level authentication: none in the first version.
-- Caller-configurable analysis fields: business parameters only.
-- Server-controlled configuration: LLM provider, model IDs, backend URLs, cache paths, memory paths, data vendors, benchmark settings, and all non-business runtime configuration.
+- 服务形态：异步任务式 API。
+- HTTP 框架：FastAPI。
+- 任务执行器：Celery。
+- 队列与 Celery result backend：Redis。
+- 持久化业务存储：PostgreSQL。
+- 实时进度：Server-Sent Events。
+- 应用层鉴权：第一版不做。
+- 调用方可配置字段：只允许业务参数。
+- 服务端控制配置：LLM provider、模型 ID、backend URL、cache 路径、memory 路径、数据 vendor、benchmark 设置，以及所有非业务运行配置。
 
-## Non-Goals
+## 非目标
 
-- No trading or order execution APIs.
-- No broker account APIs.
-- No API key, JWT, or user-account authentication in the first version.
-- No user-supplied arbitrary `DEFAULT_CONFIG` override.
-- No multi-instance distributed locking beyond Celery queue semantics.
-- No fine-grained LangGraph node streaming in the first version.
+- 不提供交易或下单 API。
+- 不提供 Broker 账户 API。
+- 第一版不提供 API Key、JWT 或用户账号鉴权。
+- 不允许调用方传入任意 `DEFAULT_CONFIG` 覆盖项。
+- 不实现超出 Celery 队列语义的多实例分布式锁。
+- 第一版不做细粒度 LangGraph 节点级 streaming。
 
-## High-Level Architecture
+## 高层架构
 
 ```text
 HTTP Client
@@ -44,19 +44,19 @@ HTTP Client
                  -> PostgreSQL: status, events, result
 ```
 
-The FastAPI process never performs long-running analysis inside request handlers. It validates requests, creates run records, enqueues Celery tasks, serves status and result queries, and streams durable events.
+FastAPI 进程不在请求处理函数里执行长耗时分析。它只负责请求校验、创建 run 记录、投递 Celery 任务、查询状态和结果，以及流式输出持久化事件。
 
-The Celery worker owns execution of `TradingAgentsGraph.propagate()`.
+Celery worker 负责执行 `TradingAgentsGraph.propagate()`。
 
-PostgreSQL is the source of truth for run state, events, and results. Redis is used by Celery only; business state is not stored exclusively in Redis.
+PostgreSQL 是 run 状态、事件和结果的唯一权威数据源。Redis 只供 Celery 使用，业务状态不只存放在 Redis 中。
 
-## API Surface
+## API 面
 
 ### `GET /health`
 
-Returns service health.
+返回服务健康状态。
 
-Response shape:
+响应结构：
 
 ```json
 {
@@ -66,13 +66,13 @@ Response shape:
 }
 ```
 
-If PostgreSQL or Redis cannot be reached, the endpoint returns a non-2xx response with details.
+如果 PostgreSQL 或 Redis 无法连接，该接口返回非 2xx 响应，并附带错误详情。
 
 ### `POST /runs`
 
-Creates an asynchronous multi-agent analysis run.
+创建一个异步多智能体分析任务。
 
-Request:
+请求：
 
 ```json
 {
@@ -83,18 +83,18 @@ Request:
 }
 ```
 
-Validation rules:
+校验规则：
 
-- `ticker` is required, uppercased, 1-32 characters.
-- `ticker` may contain letters, digits, `.`, `_`, `-`, and `^`.
-- `trade_date` is required in `YYYY-MM-DD` format.
-- `trade_date` cannot be in the future relative to server date.
-- `asset_type` is either `stock` or `crypto`.
-- `analysts` contains at least one item.
-- Each analyst is one of `market`, `social`, `news`, `fundamentals`.
-- For `asset_type="crypto"`, `fundamentals` is rejected in the first version so callers see a clear request error.
+- `ticker` 必填，会转成大写，长度为 1-32 个字符。
+- `ticker` 只能包含字母、数字、`.`、`_`、`-` 和 `^`。
+- `trade_date` 必填，格式为 `YYYY-MM-DD`。
+- `trade_date` 不能晚于服务器当前日期。
+- `asset_type` 只能是 `stock` 或 `crypto`。
+- `analysts` 至少包含一个元素。
+- 每个 analyst 只能是 `market`、`social`、`news`、`fundamentals`。
+- 当 `asset_type="crypto"` 时，第一版拒绝包含 `fundamentals` 的请求，让调用方明确看到请求错误。
 
-Response:
+响应：
 
 ```json
 {
@@ -103,20 +103,20 @@ Response:
 }
 ```
 
-HTTP status: `202 Accepted`.
+HTTP 状态码：`202 Accepted`。
 
-Side effects:
+副作用：
 
-- Insert one row into `analysis_runs`.
-- Insert `run_queued` event into `analysis_run_events`.
-- Enqueue one Celery task with `run_id`.
-- Save Celery task id back to `analysis_runs.celery_task_id`.
+- 向 `analysis_runs` 插入一行。
+- 向 `analysis_run_events` 插入 `run_queued` 事件。
+- 用 `run_id` 投递一个 Celery 任务。
+- 把 Celery task id 写回 `analysis_runs.celery_task_id`。
 
 ### `GET /runs/{run_id}`
 
-Fetches run metadata and current status.
+获取 run 元数据和当前状态。
 
-Response:
+响应：
 
 ```json
 {
@@ -134,24 +134,24 @@ Response:
 }
 ```
 
-Status values:
+状态值：
 
 - `queued`
 - `running`
 - `succeeded`
 - `failed`
 
-Unknown `run_id` returns `404`.
+未知 `run_id` 返回 `404`。
 
 ### `GET /runs/{run_id}/result`
 
-Fetches final result for a completed run.
+获取已完成 run 的最终结果。
 
-If the run is not complete, returns `409 Conflict`.
+如果 run 尚未完成，返回 `409 Conflict`。
 
-If the run failed, returns `409 Conflict` with the recorded error.
+如果 run 已失败，返回 `409 Conflict`，并附带记录下来的错误信息。
 
-Successful response:
+成功响应：
 
 ```json
 {
@@ -177,22 +177,22 @@ Successful response:
 }
 ```
 
-The `final_state` value is a JSON-serializable summary of the LangGraph final state. Message objects and other non-serializable runtime objects are omitted or converted to plain strings.
+`final_state` 是 LangGraph final state 的 JSON 可序列化摘要。Message 对象和其它不可序列化运行时对象会被省略，或转换成普通字符串。
 
 ### `GET /runs/{run_id}/events`
 
-Streams events as Server-Sent Events.
+以 Server-Sent Events 形式流式返回事件。
 
-Behavior:
+行为：
 
-- Returns `text/event-stream`.
-- Sends historical events for the run first.
-- Polls PostgreSQL every second for events with `id` greater than the last sent id.
-- Sends newly inserted events.
-- Closes after sending a terminal event for `succeeded` or `failed`.
-- Unknown `run_id` returns `404`.
+- 返回 `text/event-stream`。
+- 先发送该 run 的历史事件。
+- 每 1 秒轮询 PostgreSQL，查询 `id` 大于已发送事件 id 的新事件。
+- 发送新增事件。
+- 发送 `succeeded` 或 `failed` 终态事件后关闭连接。
+- 未知 `run_id` 返回 `404`。
 
-Example:
+示例：
 
 ```text
 event: run_queued
@@ -205,16 +205,16 @@ event: run_succeeded
 data: {"run_id":"run_01HZ...","decision":"Overweight"}
 ```
 
-First-version event types:
+第一版事件类型：
 
 - `run_queued`
 - `run_started`
 - `run_succeeded`
 - `run_failed`
 
-The event model is intentionally extensible. Later versions can add `step_started`, `step_finished`, `tool_called`, and `report_updated` without changing the SSE endpoint contract.
+事件模型刻意设计成可扩展。后续版本可以增加 `step_started`、`step_finished`、`tool_called` 和 `report_updated`，不需要修改 SSE endpoint 的接口契约。
 
-## Database Schema
+## 数据库 Schema
 
 ### `analysis_runs`
 
@@ -235,7 +235,7 @@ CREATE TABLE analysis_runs (
 );
 ```
 
-Recommended indexes:
+建议索引：
 
 ```sql
 CREATE INDEX idx_analysis_runs_status ON analysis_runs(status);
@@ -256,7 +256,7 @@ CREATE TABLE analysis_run_events (
 );
 ```
 
-Recommended indexes:
+建议索引：
 
 ```sql
 CREATE INDEX idx_analysis_run_events_run_id_id
@@ -277,54 +277,54 @@ CREATE TABLE analysis_run_results (
 );
 ```
 
-## Worker Behavior
+## Worker 行为
 
-Celery task signature:
+Celery task 签名：
 
 ```python
 run_analysis_task(run_id: str) -> None
 ```
 
-Task flow:
+任务流程：
 
-1. Load run from PostgreSQL.
-2. If run status is not `queued`, return without doing work.
-3. Set status to `running`.
-4. Set `started_at`.
-5. Set `current_step` to `Analysis running`.
-6. Insert `run_started` event.
-7. Build server-side config from `DEFAULT_CONFIG.copy()`.
-8. Instantiate `TradingAgentsGraph(selected_analysts=run.analysts, config=config)`.
-9. Execute `graph.propagate(run.ticker, run.trade_date, asset_type=run.asset_type)`.
-10. Extract `decision`, `reports`, and JSON-safe `final_state`.
-11. Insert `analysis_run_results`.
-12. Set status to `succeeded`.
-13. Set `finished_at`.
-14. Set `current_step` to `Completed`.
-15. Insert `run_succeeded` event.
+1. 从 PostgreSQL 读取 run。
+2. 如果 run 状态不是 `queued`，直接返回，避免重复执行。
+3. 将状态设置为 `running`。
+4. 设置 `started_at`。
+5. 将 `current_step` 设置为 `Analysis running`。
+6. 插入 `run_started` 事件。
+7. 从 `DEFAULT_CONFIG.copy()` 构建服务端配置。
+8. 创建 `TradingAgentsGraph(selected_analysts=run.analysts, config=config)`。
+9. 执行 `graph.propagate(run.ticker, run.trade_date, asset_type=run.asset_type)`。
+10. 抽取 `decision`、`reports` 和 JSON-safe `final_state`。
+11. 插入 `analysis_run_results`。
+12. 将状态设置为 `succeeded`。
+13. 设置 `finished_at`。
+14. 将 `current_step` 设置为 `Completed`。
+15. 插入 `run_succeeded` 事件。
 
-Failure flow:
+失败流程：
 
-1. Catch exception.
-2. Store a concise error string in `analysis_runs.error`.
-3. Set status to `failed`.
-4. Set `finished_at`.
-5. Set `current_step` to `Failed`.
-6. Insert `run_failed` event with error payload.
-7. Re-raise only if Celery retry behavior is explicitly configured by the implementation plan.
+1. 捕获异常。
+2. 将简短错误信息写入 `analysis_runs.error`。
+3. 将状态设置为 `failed`。
+4. 设置 `finished_at`。
+5. 将 `current_step` 设置为 `Failed`。
+6. 插入带 error payload 的 `run_failed` 事件。
+7. 只有当 implementation plan 明确配置 Celery retry 行为时，才重新抛出异常。
 
-The first version should not implement automatic retries by default. Re-running LLM-heavy tasks can be expensive and may duplicate external provider calls. Operators can resubmit a new run explicitly.
+第一版默认不实现自动重试。LLM-heavy 任务重跑成本高，也可能重复调用外部 provider。运维或调用方可以显式提交新的 run。
 
-## Configuration
+## 配置
 
-Environment variables:
+环境变量：
 
-- `DATABASE_URL`: PostgreSQL connection string.
-- `REDIS_URL`: Redis connection string for Celery broker and result backend.
-- `TRADINGAGENTS_API_TASK_TIME_LIMIT_SECONDS`: Celery hard time limit; default `3600`.
-- `TRADINGAGENTS_API_WORKER_CONCURRENCY`: documented deployment knob; default recommended value `1`.
+- `DATABASE_URL`：PostgreSQL 连接字符串。
+- `REDIS_URL`：Redis 连接字符串，用于 Celery broker 和 result backend。
+- `TRADINGAGENTS_API_TASK_TIME_LIMIT_SECONDS`：Celery hard time limit，默认 `3600`。
+- `TRADINGAGENTS_API_WORKER_CONCURRENCY`：文档化的部署参数，推荐默认值为 `1`。
 
-Existing TradingAgents environment variables remain server-controlled:
+现有 TradingAgents 环境变量仍由服务端控制：
 
 - `TRADINGAGENTS_LLM_PROVIDER`
 - `TRADINGAGENTS_DEEP_THINK_LLM`
@@ -338,102 +338,102 @@ Existing TradingAgents environment variables remain server-controlled:
 - `TRADINGAGENTS_CACHE_DIR`
 - `TRADINGAGENTS_MEMORY_LOG_PATH`
 
-Provider API keys also remain server-controlled. Clients cannot supply provider keys in request payloads.
+Provider API keys 也仍由服务端控制。客户端不能在请求 payload 中传 provider key。
 
-## Deployment Commands
+## 部署命令
 
-API process:
+API 进程：
 
 ```bash
 uvicorn tradingagents.api.app:app --host 0.0.0.0 --port 8000
 ```
 
-Worker process:
+Worker 进程：
 
 ```bash
 celery -A tradingagents.worker.celery_app worker --loglevel=info --concurrency=1
 ```
 
-Required services:
+必需服务：
 
-- PostgreSQL reachable by `DATABASE_URL`.
-- Redis reachable by `REDIS_URL`.
+- PostgreSQL，可通过 `DATABASE_URL` 访问。
+- Redis，可通过 `REDIS_URL` 访问。
 
-## Package Dependencies
+## 包依赖
 
-The implementation will need to add dependencies:
+实现需要新增依赖：
 
 - `fastapi`
 - `uvicorn`
 - `celery`
 - `sqlalchemy`
-- `psycopg[binary]` or `psycopg2-binary`
-- `sse-starlette` or native `StreamingResponse`
+- `psycopg[binary]` 或 `psycopg2-binary`
+- `sse-starlette` 或原生 `StreamingResponse`
 
-Use the smallest dependency set that keeps the implementation clear. If native FastAPI `StreamingResponse` is sufficient for SSE, avoid adding `sse-starlette`.
+在保持实现清晰的前提下，使用最小依赖集。如果 FastAPI 原生 `StreamingResponse` 足够实现 SSE，就不要额外加入 `sse-starlette`。
 
-The implementation should also include `tradingagents.api*` and `tradingagents.worker*` in package discovery if setuptools does not already include them.
+如果 setuptools 当前没有包含新包，实现时需要把 `tradingagents.api*` 和 `tradingagents.worker*` 纳入 package discovery。
 
-## Error Handling
+## 错误处理
 
-Request validation errors return FastAPI's normal `422` response.
+请求结构校验错误返回 FastAPI 默认 `422` 响应。
 
-Domain validation errors return `400`, for example:
+领域校验错误返回 `400`，例如：
 
-- crypto request includes `fundamentals`.
-- unsupported analyst key.
-- future trade date.
-- invalid ticker characters.
+- crypto 请求包含 `fundamentals`。
+- analyst key 不支持。
+- trade date 是未来日期。
+- ticker 字符非法。
 
-Unknown run returns `404`.
+未知 run 返回 `404`。
 
-Result requested before completion returns `409`.
+结果在完成前被请求时返回 `409`。
 
-Failed run result request returns `409` with the stored failure message.
+失败 run 的 result 请求返回 `409`，并附带已记录的失败信息。
 
-Worker exceptions are persisted to PostgreSQL before the task exits.
+Worker 异常会在 task 退出前持久化到 PostgreSQL。
 
-## Testing Strategy
+## 测试策略
 
-The implementation should be test-first.
+实现必须 test-first。
 
-Minimum test coverage:
+最低测试覆盖：
 
-- Request validation accepts valid analysis requests.
-- Request validation rejects invalid ticker.
-- Request validation rejects future date.
-- Request validation rejects crypto fundamentals.
-- `POST /runs` inserts run and queued event, then enqueues Celery task.
-- `GET /runs/{run_id}` returns persisted run metadata.
-- `GET /runs/{run_id}/result` returns `409` before completion.
-- `GET /runs/{run_id}/result` returns stored result after completion.
-- Worker success path writes result and `run_succeeded`.
-- Worker failure path writes failure state and `run_failed`.
-- SSE endpoint emits historical events in order.
+- 请求校验接受合法分析请求。
+- 请求校验拒绝非法 ticker。
+- 请求校验拒绝未来日期。
+- 请求校验拒绝 crypto fundamentals。
+- `POST /runs` 插入 run 和 queued event，并投递 Celery 任务。
+- `GET /runs/{run_id}` 返回持久化 run 元数据。
+- `GET /runs/{run_id}/result` 在任务完成前返回 `409`。
+- `GET /runs/{run_id}/result` 在任务完成后返回存储结果。
+- Worker 成功路径写入 result 和 `run_succeeded`。
+- Worker 失败路径写入失败状态和 `run_failed`。
+- SSE endpoint 按顺序发送历史事件。
 
-Tests should not call real LLMs or market data providers. Worker tests should patch `TradingAgentsGraph` or inject a fake analysis executor.
+测试不能调用真实 LLM 或市场数据 provider。Worker 测试应 patch `TradingAgentsGraph`，或注入 fake analysis executor。
 
-## Security and Operations Notes
+## 安全与运维说明
 
-Because first-version application-level auth is disabled, production deployment must put the service behind one of:
+由于第一版不做应用层鉴权，生产部署必须放在以下任一保护层之后：
 
-- private network only;
-- firewall allowlist;
-- reverse proxy with auth;
-- API gateway;
-- VPN.
+- 私有网络；
+- 防火墙 allowlist；
+- 带鉴权的反向代理；
+- API gateway；
+- VPN。
 
-Do not expose the raw service port directly to the public internet.
+不要把原始服务端口直接暴露到公网。
 
-Run Celery worker concurrency conservatively. Each analysis can trigger many external LLM and market-data calls. The recommended first deployment is one API process and one worker process with `--concurrency=1`.
+Celery worker 并发要保守设置。每次分析可能触发大量外部 LLM 和市场数据调用。第一版推荐部署为一个 API 进程加一个 worker 进程，并设置 `--concurrency=1`。
 
-## Open Follow-Ups After First Version
+## 第一版之后的后续事项
 
-- Add API key authentication.
-- Add cancellation endpoint.
-- Add idempotency key support for `POST /runs`.
-- Add fine-grained LangGraph progress events by streaming worker chunks.
-- Add retention policy for old runs/results/events.
-- Add admin endpoint for failed run inspection.
-- Add Docker Compose profile with API, worker, PostgreSQL, and Redis.
+- 增加 API key 鉴权。
+- 增加取消任务 endpoint。
+- 为 `POST /runs` 增加 idempotency key。
+- 通过 streaming worker chunks 增加细粒度 LangGraph 进度事件。
+- 增加旧 runs、results、events 的保留策略。
+- 增加失败 run 检查用 admin endpoint。
+- 增加包含 API、worker、PostgreSQL 和 Redis 的 Docker Compose profile。
 
