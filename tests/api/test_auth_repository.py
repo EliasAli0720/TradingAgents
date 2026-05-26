@@ -194,3 +194,53 @@ def test_session_repository_revoke_all_for_user_except():
     assert sessions.load_active(keep_sid) is not None
     assert sessions.load_active(drop_a) is None
     assert sessions.load_active(drop_b) is None
+
+
+# --- Scoped AnalysisRunRepository ----------------------------------------
+
+
+def test_scoped_repository_isolates_users():
+    from tradingagents.api.repositories import AnalysisRunRepository
+
+    db = _session()
+    a = AnalysisRunRepository(db, user_id="usr_a")
+    b = AnalysisRunRepository(db, user_id="usr_b")
+    run_a = a.create_run("NVDA", date(2026, 1, 15), "stock", ["market"])
+    run_b = b.create_run("TSLA", date(2026, 1, 15), "stock", ["market"])
+    db.commit()
+
+    # Each scoped repo only sees its own run.
+    assert a.get_run(run_a.run_id) is not None
+    assert b.get_run(run_a.run_id) is None
+    assert a.get_run(run_b.run_id) is None
+    assert b.get_run(run_b.run_id) is not None
+
+
+def test_unscoped_repository_sees_all():
+    from tradingagents.api.repositories import AnalysisRunRepository
+
+    db = _session()
+    a = AnalysisRunRepository(db, user_id="usr_a")
+    rid = a.create_run("NVDA", date(2026, 1, 15), "stock", ["market"]).run_id
+    db.commit()
+    admin = AnalysisRunRepository(db)  # user_id=None
+    assert admin.get_run(rid) is not None
+
+
+def test_scoped_get_result_hidden_for_non_owner():
+    from tradingagents.api.repositories import AnalysisRunRepository
+
+    db = _session()
+    a = AnalysisRunRepository(db, user_id="usr_a")
+    b = AnalysisRunRepository(db, user_id="usr_b")
+    run = a.create_run("NVDA", date(2026, 1, 15), "stock", ["market"])
+    a.mark_running(run.run_id)
+    a.store_success(
+        run_id=run.run_id,
+        decision="Hold",
+        reports={"final_trade_decision": "Hold"},
+        final_state={"ticker": "NVDA"},
+    )
+    db.commit()
+    assert a.get_result(run.run_id) is not None
+    assert b.get_result(run.run_id) is None

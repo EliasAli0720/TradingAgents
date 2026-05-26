@@ -19,8 +19,9 @@ def new_run_id() -> str:
 
 
 class AnalysisRunRepository:
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, user_id: Optional[str] = None):
         self.session = session
+        self.user_id = user_id
 
     def create_run(
         self,
@@ -28,8 +29,9 @@ class AnalysisRunRepository:
         trade_date: date,
         asset_type: str,
         analysts: list[str],
-        user_id: str = "__system__",
+        user_id: Optional[str] = None,
     ) -> AnalysisRun:
+        effective_user_id = user_id or self.user_id or "__system__"
         now = utcnow()
         run = AnalysisRun(
             run_id=new_run_id(),
@@ -38,7 +40,7 @@ class AnalysisRunRepository:
             trade_date=trade_date,
             asset_type=asset_type,
             analysts=analysts,
-            user_id=user_id,
+            user_id=effective_user_id,
             current_step=None,
             celery_task_id=None,
             error=None,
@@ -49,7 +51,10 @@ class AnalysisRunRepository:
         return run
 
     def get_run(self, run_id: str) -> Optional[AnalysisRun]:
-        return self.session.get(AnalysisRun, run_id)
+        stmt = select(AnalysisRun).where(AnalysisRun.run_id == run_id)
+        if self.user_id is not None:
+            stmt = stmt.where(AnalysisRun.user_id == self.user_id)
+        return self.session.scalar(stmt)
 
     def set_celery_task_id(self, run_id: str, task_id: str) -> None:
         run = self.require_run(run_id)
@@ -133,6 +138,8 @@ class AnalysisRunRepository:
         self.add_event(run_id, "run_failed", {"run_id": run_id, "error": error})
 
     def get_result(self, run_id: str) -> Optional[AnalysisRunResult]:
+        if self.user_id is not None and self.get_run(run_id) is None:
+            return None
         return self.session.get(AnalysisRunResult, run_id)
 
     def add_event(self, run_id: str, event_type: str, payload: dict[str, Any]) -> AnalysisRunEvent:
