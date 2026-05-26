@@ -109,3 +109,15 @@ class UserResponse(BaseModel):
     user_id: str
     username: str
     role: UserRole
+
+
+class AdminUserResponse(BaseModel):
+    user_id: str
+    username: str
+    role: UserRole
+    is_active: bool
+
+
+class AdminUserPatch(BaseModel):
+    role: Optional[UserRole] = None
+    is_active: Optional[bool] = None
