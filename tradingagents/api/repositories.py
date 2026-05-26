@@ -30,6 +30,7 @@ class AnalysisRunRepository:
         asset_type: str,
         analysts: list[str],
         user_id: Optional[str] = None,
+        llm_config: Optional[dict[str, Any]] = None,
     ) -> AnalysisRun:
         effective_user_id = user_id or self.user_id or "__system__"
         now = utcnow()
@@ -41,6 +42,7 @@ class AnalysisRunRepository:
             asset_type=asset_type,
             analysts=analysts,
             user_id=effective_user_id,
+            llm_config=llm_config,
             current_step=None,
             celery_task_id=None,
             error=None,

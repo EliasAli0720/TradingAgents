@@ -28,6 +28,20 @@ def _register_login(client, username, password="hunter22a"):
     return r.json(), client.cookies.get("tradingagents_csrf")
 
 
+def _put_model_settings(client, csrf):
+    r = client.put(
+        "/settings/model",
+        json={
+            "llm_provider": "openai",
+            "deep_think_llm": "gpt-5.4",
+            "quick_think_llm": "gpt-5.4-mini",
+            "backend_url": None,
+        },
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert r.status_code == 200
+
+
 def test_post_runs_requires_auth():
     app, _ = _build_app()
     c = TestClient(app)
@@ -74,6 +88,7 @@ def test_operator_can_create_run_and_owner_scope_isolated():
     # promote second by direct DB write is overkill here. Operate as admin:
     # admin role is allowed to POST /runs.
     csrf = admin.cookies.get("tradingagents_csrf")
+    _put_model_settings(admin, csrf)
     r = admin.post(
         "/runs",
         json={
@@ -98,6 +113,7 @@ def test_admin_sees_any_run():
     admin = TestClient(app)
     _register_login(admin, "alice")
     csrf = admin.cookies.get("tradingagents_csrf")
+    _put_model_settings(admin, csrf)
     r = admin.post(
         "/runs",
         json={

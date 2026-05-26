@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from tradingagents.api.model_settings_repository import UserModelSettingsRepository
 from tradingagents.api.deps import (
     get_current_user,
     get_db_session,
@@ -35,6 +36,10 @@ def create_run(
     enqueue=Depends(get_task_enqueue),
     user: User = Depends(require_role("admin", "operator")),
 ):
+    llm_config = UserModelSettingsRepository(session).snapshot(user.user_id)
+    if llm_config is None:
+        raise HTTPException(status_code=409, detail="model settings not configured")
+
     repo = AnalysisRunRepository(session, user_id=user.user_id)
     run = repo.create_run(
         ticker=request.ticker,
@@ -42,6 +47,7 @@ def create_run(
         asset_type=request.asset_type,
         analysts=list(request.analysts),
         user_id=user.user_id,
+        llm_config=llm_config,
     )
     session.commit()
     try:

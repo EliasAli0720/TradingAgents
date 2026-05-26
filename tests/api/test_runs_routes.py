@@ -23,6 +23,19 @@ def _login_admin(client: TestClient) -> None:
     client.headers.update({"X-CSRF-Token": csrf})
 
 
+def _put_model_settings(client: TestClient) -> None:
+    response = client.put(
+        "/settings/model",
+        json={
+            "llm_provider": "openai",
+            "deep_think_llm": "gpt-5.4",
+            "quick_think_llm": "gpt-5.4-mini",
+            "backend_url": None,
+        },
+    )
+    assert response.status_code == 200
+
+
 def _client():
     engine = create_db_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
@@ -42,6 +55,7 @@ def _client():
     app.dependency_overrides[get_task_enqueue] = lambda: enqueue
     client = TestClient(app)
     _login_admin(client)
+    _put_model_settings(client)
     return client, Session, task_ids
 
 
@@ -59,7 +73,37 @@ def _client_with_enqueue(enqueue):
     app.dependency_overrides[get_task_enqueue] = lambda: enqueue
     client = TestClient(app, raise_server_exceptions=False)
     _login_admin(client)
+    _put_model_settings(client)
     return client, Session
+
+
+def test_post_runs_requires_model_settings():
+    engine = create_db_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine, future=True)
+
+    def override_session():
+        with Session() as session:
+            yield session
+
+    app = create_app()
+    app.dependency_overrides[get_db_session] = override_session
+    app.dependency_overrides[get_task_enqueue] = lambda: lambda run_id: "celery-test-id"
+    client = TestClient(app)
+    _login_admin(client)
+
+    response = client.post(
+        "/runs",
+        json={
+            "ticker": "nvda",
+            "trade_date": "2026-01-15",
+            "asset_type": "stock",
+            "analysts": ["market"],
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "model settings not configured"
 
 
 def test_post_runs_creates_run_and_enqueues_task():
@@ -84,6 +128,12 @@ def test_post_runs_creates_run_and_enqueues_task():
         run = AnalysisRunRepository(session).get_run(body["run_id"])
         assert run.ticker == "NVDA"
         assert run.celery_task_id == "celery-test-id"
+        assert run.llm_config == {
+            "llm_provider": "openai",
+            "deep_think_llm": "gpt-5.4",
+            "quick_think_llm": "gpt-5.4-mini",
+            "backend_url": None,
+        }
 
 
 def test_get_run_returns_status():

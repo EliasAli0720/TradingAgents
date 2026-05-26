@@ -24,6 +24,7 @@ class AnalysisRun(Base):
     asset_type: Mapped[str] = mapped_column(String, nullable=False)
     analysts: Mapped[list[str]] = mapped_column(JsonType, nullable=False)
     user_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    llm_config: Mapped[Optional[dict[str, Any]]] = mapped_column(JsonType, nullable=True)
     current_step: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     celery_task_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
