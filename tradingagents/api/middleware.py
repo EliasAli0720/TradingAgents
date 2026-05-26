@@ -22,14 +22,20 @@ class CsrfMiddleware(BaseHTTPMiddleware):
         self,
         app,
         csrf_cookie_name: str,
+        session_cookie_name: str | None = None,
         exempt_paths: tuple[str, ...] = (),
     ):
         super().__init__(app)
         self.csrf_cookie_name = csrf_cookie_name
+        self.session_cookie_name = session_cookie_name
         self.exempt_paths = tuple(exempt_paths)
 
     async def dispatch(self, request: Request, call_next):
         if request.method in _SAFE_METHODS or request.url.path in self.exempt_paths:
+            return await call_next(request)
+        # If the request has no session at all, defer to the auth dependency
+        # to surface a clean 401 rather than masking it with a CSRF 403.
+        if self.session_cookie_name and not request.cookies.get(self.session_cookie_name):
             return await call_next(request)
         cookie_value = request.cookies.get(self.csrf_cookie_name)
         header_value = request.headers.get("x-csrf-token")

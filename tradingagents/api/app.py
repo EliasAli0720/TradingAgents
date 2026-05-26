@@ -14,10 +14,11 @@ def create_app() -> FastAPI:
     app.add_middleware(
         CsrfMiddleware,
         csrf_cookie_name=settings.csrf_cookie_name,
-        # /runs is exempted here only until Task 9 wires CSRF-aware fixtures into
-        # tests/api/test_runs_routes.py. Auth routes always remain exempt because
-        # callers do not yet hold a CSRF cookie at login/registration time.
-        exempt_paths=("/auth/login", "/auth/register", "/runs"),
+        session_cookie_name=settings.session_cookie_name,
+        # Auth routes are exempt because callers do not yet hold a CSRF cookie
+        # at login/registration time. All other state-changing routes require
+        # the double-submit CSRF check when a session cookie is present.
+        exempt_paths=("/auth/login", "/auth/register"),
     )
     app.include_router(health.router)
     app.include_router(auth.router)

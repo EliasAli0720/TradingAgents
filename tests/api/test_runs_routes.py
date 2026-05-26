@@ -10,6 +10,19 @@ from tradingagents.api.models import AnalysisRun
 from tradingagents.api.repositories import AnalysisRunRepository
 
 
+def _login_admin(client: TestClient) -> None:
+    """Register the first user (auto-admin) and log them in.
+
+    After this, ``client.cookies`` carries the session + csrf cookies, and
+    ``client.headers`` is updated to include ``X-CSRF-Token`` so the test
+    code can issue state-changing requests without restating the header.
+    """
+    client.post("/auth/register", json={"username": "alice", "password": "hunter22a"})
+    client.post("/auth/login", json={"username": "alice", "password": "hunter22a"})
+    csrf = client.cookies.get("tradingagents_csrf")
+    client.headers.update({"X-CSRF-Token": csrf})
+
+
 def _client():
     engine = create_db_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
@@ -27,7 +40,9 @@ def _client():
     app = create_app()
     app.dependency_overrides[get_db_session] = override_session
     app.dependency_overrides[get_task_enqueue] = lambda: enqueue
-    return TestClient(app), Session, task_ids
+    client = TestClient(app)
+    _login_admin(client)
+    return client, Session, task_ids
 
 
 def _client_with_enqueue(enqueue):
@@ -42,7 +57,9 @@ def _client_with_enqueue(enqueue):
     app = create_app()
     app.dependency_overrides[get_db_session] = override_session
     app.dependency_overrides[get_task_enqueue] = lambda: enqueue
-    return TestClient(app, raise_server_exceptions=False), Session
+    client = TestClient(app, raise_server_exceptions=False)
+    _login_admin(client)
+    return client, Session
 
 
 def test_post_runs_creates_run_and_enqueues_task():

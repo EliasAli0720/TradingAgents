@@ -7,7 +7,15 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from tradingagents.api.deps import get_db_session, get_stream_session_factory, get_task_enqueue
+from tradingagents.api.deps import (
+    get_current_user,
+    get_db_session,
+    get_scoped_repository,
+    get_stream_session_factory,
+    get_task_enqueue,
+    require_role,
+)
+from tradingagents.api.models import User
 from tradingagents.api.repositories import AnalysisRunRepository
 from tradingagents.api.schemas import (
     CreateRunRequest,
@@ -25,13 +33,15 @@ def create_run(
     request: CreateRunRequest,
     session: Session = Depends(get_db_session),
     enqueue=Depends(get_task_enqueue),
+    user: User = Depends(require_role("admin", "operator")),
 ):
-    repo = AnalysisRunRepository(session)
+    repo = AnalysisRunRepository(session, user_id=user.user_id)
     run = repo.create_run(
         ticker=request.ticker,
         trade_date=request.trade_date,
         asset_type=request.asset_type,
         analysts=list(request.analysts),
+        user_id=user.user_id,
     )
     session.commit()
     try:
@@ -49,8 +59,10 @@ def create_run(
 
 
 @router.get("/{run_id}", response_model=RunStatusResponse)
-def get_run(run_id: str, session: Session = Depends(get_db_session)):
-    repo = AnalysisRunRepository(session)
+def get_run(
+    run_id: str,
+    repo: AnalysisRunRepository = Depends(get_scoped_repository),
+):
     run = repo.get_run(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="run not found")
@@ -58,8 +70,10 @@ def get_run(run_id: str, session: Session = Depends(get_db_session)):
 
 
 @router.get("/{run_id}/result", response_model=RunResultResponse)
-def get_result(run_id: str, session: Session = Depends(get_db_session)):
-    repo = AnalysisRunRepository(session)
+def get_result(
+    run_id: str,
+    repo: AnalysisRunRepository = Depends(get_scoped_repository),
+):
     run = repo.get_run(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="run not found")
@@ -83,10 +97,14 @@ def get_result(run_id: str, session: Session = Depends(get_db_session)):
 @router.get("/{run_id}/events")
 async def stream_events(
     run_id: str,
+    user: User = Depends(get_current_user),
     stream_session_factory=Depends(get_stream_session_factory),
 ):
+    scope_user_id = None if user.role == "admin" else user.user_id
+
+    # Handshake-time existence + ownership check.
     with stream_session_factory() as stream_session:
-        repo = AnalysisRunRepository(stream_session)
+        repo = AnalysisRunRepository(stream_session, user_id=scope_user_id)
         if repo.get_run(run_id) is None:
             raise HTTPException(status_code=404, detail="run not found")
 
@@ -95,7 +113,14 @@ async def stream_events(
         terminal = False
         while not terminal:
             with stream_session_factory() as stream_session:
-                stream_repo = AnalysisRunRepository(stream_session)
+                stream_repo = AnalysisRunRepository(
+                    stream_session, user_id=scope_user_id
+                )
+                # Re-verify run is still accessible to this user; if it vanished
+                # (e.g. user was demoted off owner scope mid-stream) just close.
+                if stream_repo.get_run(run_id) is None:
+                    terminal = True
+                    break
                 events = stream_repo.list_events(run_id, after_id=last_id)
                 for event in events:
                     last_id = event.id
