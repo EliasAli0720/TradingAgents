@@ -36,6 +36,7 @@ def execute_analysis_run(
         repo.session.rollback()
         repo.store_failure(run_id, str(exc))
         repo.session.commit()
+        raise
 
 
 @celery_app.task(name="tradingagents.worker.jobs.run_analysis_task")

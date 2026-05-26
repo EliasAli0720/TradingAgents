@@ -313,18 +313,23 @@ run_analysis_task(run_id: str) -> None
 4. 设置 `finished_at`。
 5. 将 `current_step` 设置为 `Failed`。
 6. 插入带 error payload 的 `run_failed` 事件。
-7. 只有当 implementation plan 明确配置 Celery retry 行为时，才重新抛出异常。
+7. 重新抛出异常，让 Celery result backend 也记录 task 失败，避免 PostgreSQL 显示失败但 Celery 显示成功。
 
 第一版默认不实现自动重试。LLM-heavy 任务重跑成本高，也可能重复调用外部 provider。运维或调用方可以显式提交新的 run。
+
+如果 worker 进程被 hard kill，或 Celery hard time limit 在 Python 异常处理前终止进程，run 可能停留在 `running`。第一版先通过保守 `--concurrency=1` 和外部进程监控降低概率；后续应增加 stale running run 的恢复任务或 admin 修复 endpoint。
 
 ## 配置
 
 环境变量：
 
+- `TRADINGAGENTS_API_ENV`：运行环境。生产环境设置为 `production`。
 - `DATABASE_URL`：PostgreSQL 连接字符串。
 - `REDIS_URL`：Redis 连接字符串，用于 Celery broker 和 result backend。
 - `TRADINGAGENTS_API_TASK_TIME_LIMIT_SECONDS`：Celery hard time limit，默认 `3600`。
 - `TRADINGAGENTS_API_WORKER_CONCURRENCY`：文档化的部署参数，推荐默认值为 `1`。
+
+当 `TRADINGAGENTS_API_ENV=production` 时，服务启动必须提供 `DATABASE_URL`。开发和测试环境可以使用默认 SQLite 连接，便于本地快速运行。
 
 现有 TradingAgents 环境变量仍由服务端控制：
 
@@ -347,12 +352,18 @@ Provider API keys 也仍由服务端控制。客户端不能在请求 payload �
 API 进程：
 
 ```bash
+export TRADINGAGENTS_API_ENV=production
+export DATABASE_URL='postgresql+psycopg://user:password@postgres:5432/tradingagents'
+export REDIS_URL='redis://redis:6379/0'
 uvicorn tradingagents.api.app:app --host 0.0.0.0 --port 8000
 ```
 
 Worker 进程：
 
 ```bash
+export TRADINGAGENTS_API_ENV=production
+export DATABASE_URL='postgresql+psycopg://user:password@postgres:5432/tradingagents'
+export REDIS_URL='redis://redis:6379/0'
 celery -A tradingagents.worker.celery_app worker --loglevel=info --concurrency=1
 ```
 
@@ -434,6 +445,7 @@ Celery worker 并发要保守设置。每次分析可能触发大量外部 LLM �
 - 增加 API key 鉴权。
 - 增加取消任务 endpoint。
 - 为 `POST /runs` 增加 idempotency key。
+- 增加 stale running run 的恢复任务或 admin 修复 endpoint。
 - 通过 streaming worker chunks 增加细粒度 LangGraph 进度事件。
 - 增加旧 runs、results、events 的保留策略。
 - 增加失败 run 检查用 admin endpoint。

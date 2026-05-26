@@ -3,6 +3,7 @@ import subprocess
 import sys
 from datetime import date
 
+import pytest
 from sqlalchemy.orm import sessionmaker
 
 from tradingagents.api.db import Base, create_db_engine
@@ -103,7 +104,8 @@ def test_execute_analysis_run_failure_writes_error():
     def fake_executor(ticker, trade_date, asset_type, analysts):
         raise RuntimeError("provider failed")
 
-    execute_analysis_run(repo, run.run_id, fake_executor)
+    with pytest.raises(RuntimeError, match="provider failed"):
+        execute_analysis_run(repo, run.run_id, fake_executor)
     session.commit()
 
     saved = repo.get_run(run.run_id)
