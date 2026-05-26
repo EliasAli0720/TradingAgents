@@ -39,7 +39,10 @@ def create_run(
     except Exception as exc:
         repo.store_failure(run.run_id, str(exc))
         session.commit()
-        raise
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"run_id": run.run_id, "error": str(exc)},
+        ) from exc
     repo.set_celery_task_id(run.run_id, task_id)
     session.commit()
     return CreateRunResponse(run_id=run.run_id, status="queued")
@@ -80,12 +83,12 @@ def get_result(run_id: str, session: Session = Depends(get_db_session)):
 @router.get("/{run_id}/events")
 async def stream_events(
     run_id: str,
-    session: Session = Depends(get_db_session),
     stream_session_factory=Depends(get_stream_session_factory),
 ):
-    repo = AnalysisRunRepository(session)
-    if repo.get_run(run_id) is None:
-        raise HTTPException(status_code=404, detail="run not found")
+    with stream_session_factory() as stream_session:
+        repo = AnalysisRunRepository(stream_session)
+        if repo.get_run(run_id) is None:
+            raise HTTPException(status_code=404, detail="run not found")
 
     async def event_generator():
         last_id = 0

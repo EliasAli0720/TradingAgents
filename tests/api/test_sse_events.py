@@ -5,7 +5,7 @@ from sqlalchemy.orm import sessionmaker
 
 from tradingagents.api.app import create_app
 from tradingagents.api.db import Base, create_db_engine
-from tradingagents.api.deps import get_db_session, get_stream_session_factory
+from tradingagents.api.deps import get_stream_session_factory
 from tradingagents.api.repositories import AnalysisRunRepository
 
 
@@ -14,12 +14,7 @@ def test_events_stream_emits_historical_events_in_order():
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine, future=True)
 
-    def override_session():
-        with Session() as session:
-            yield session
-
     app = create_app()
-    app.dependency_overrides[get_db_session] = override_session
     app.dependency_overrides[get_stream_session_factory] = lambda: Session
 
     with Session() as session:

@@ -66,7 +66,7 @@ PostgreSQL 是 run 状态、事件和结果的唯一权威数据源。Redis 只�
 }
 ```
 
-如果 PostgreSQL 或 Redis 无法连接，该接口返回非 2xx 响应，并附带错误详情。
+当前实现是轻量存活检查，返回 API 进程可响应的状态。PostgreSQL 和 Redis 的深度连通性检查留给后续增强版本或外部监控。
 
 ### `POST /runs`
 
@@ -109,8 +109,10 @@ HTTP 状态码：`202 Accepted`。
 
 - 向 `analysis_runs` 插入一行。
 - 向 `analysis_run_events` 插入 `run_queued` 事件。
+- 先提交 run 记录，让 worker 的独立数据库会话一定能读取到该 run。
 - 用 `run_id` 投递一个 Celery 任务。
 - 把 Celery task id 写回 `analysis_runs.celery_task_id`。
+- 如果投递 Celery 失败，将 run 标记为 `failed` 并记录错误。
 
 ### `GET /runs/{run_id}`
 
@@ -287,13 +289,13 @@ run_analysis_task(run_id: str) -> None
 
 任务流程：
 
-1. 从 PostgreSQL 读取 run。
-2. 如果 run 状态不是 `queued`，直接返回，避免重复执行。
+1. 通过条件更新 `WHERE status = 'queued'` 原子领取 run。
+2. 如果 run 不存在或已不是 `queued`，直接返回，避免重复执行。
 3. 将状态设置为 `running`。
 4. 设置 `started_at`。
 5. 将 `current_step` 设置为 `Analysis running`。
 6. 插入 `run_started` 事件。
-7. 从 `DEFAULT_CONFIG.copy()` 构建服务端配置。
+7. 从 `DEFAULT_CONFIG` 深拷贝构建服务端配置，避免不同 worker 任务共享嵌套配置对象。
 8. 创建 `TradingAgentsGraph(selected_analysts=run.analysts, config=config)`。
 9. 执行 `graph.propagate(run.ticker, run.trade_date, asset_type=run.asset_type)`。
 10. 抽取 `decision`、`reports` 和 JSON-safe `final_state`。
@@ -436,4 +438,3 @@ Celery worker 并发要保守设置。每次分析可能触发大量外部 LLM �
 - 增加旧 runs、results、events 的保留策略。
 - 增加失败 run 检查用 admin endpoint。
 - 增加包含 API、worker、PostgreSQL 和 Redis 的 Docker Compose profile。
-

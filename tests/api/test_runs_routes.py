@@ -154,8 +154,12 @@ def test_post_runs_enqueue_failure_marks_run_failed():
         },
     )
 
-    assert response.status_code == 500
+    assert response.status_code == 503
+    body = response.json()
+    assert body["detail"]["run_id"].startswith("run_")
+    assert body["detail"]["error"] == "redis unavailable"
     with Session() as session:
         run = session.query(AnalysisRun).one()
         assert run.status == "failed"
         assert run.error == "redis unavailable"
+        assert body["detail"]["run_id"] == run.run_id
