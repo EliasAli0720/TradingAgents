@@ -179,3 +179,29 @@ def test_change_password_revokes_other_sessions():
     assert r.status_code == 204
     assert c1.get("/auth/me").status_code == 200
     assert c2.get("/auth/me").status_code == 401
+
+
+def test_login_rate_limit_returns_429_with_retry_after():
+    from tradingagents.api.deps import get_login_rate_limiter
+    from tradingagents.api.rate_limit import InMemoryBackend, SlidingWindow
+
+    engine = create_db_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine, future=True)
+
+    def override():
+        with Session() as session:
+            yield session
+
+    app = create_app()
+    app.dependency_overrides[get_db_session] = override
+    limiter = SlidingWindow(backend=InMemoryBackend(), limit=3, window_seconds=60)
+    app.dependency_overrides[get_login_rate_limiter] = lambda: limiter
+    c = TestClient(app)
+    c.post("/auth/register", json={"username": "alice", "password": "hunter22a"})
+
+    for _ in range(3):
+        c.post("/auth/login", json={"username": "alice", "password": "WRONG222"})
+    r = c.post("/auth/login", json={"username": "alice", "password": "WRONG222"})
+    assert r.status_code == 429
+    assert r.headers.get("Retry-After") == "60"

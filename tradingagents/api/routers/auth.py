@@ -13,8 +13,13 @@ from tradingagents.api.auth_repository import (
     WeakPassword,
 )
 from tradingagents.api.config import get_api_settings
-from tradingagents.api.deps import get_current_user, get_db_session
+from tradingagents.api.deps import (
+    get_current_user,
+    get_db_session,
+    get_login_rate_limiter,
+)
 from tradingagents.api.models import User
+from tradingagents.api.rate_limit import SlidingWindow
 from tradingagents.api.schemas import (
     ChangePasswordRequest,
     LoginRequest,
@@ -81,7 +86,16 @@ def login(
     body: LoginRequest,
     response: Response,
     session: Session = Depends(get_db_session),
+    limiter: SlidingWindow = Depends(get_login_rate_limiter),
 ):
+    client_ip = request.client.host if request.client else "unknown"
+    username_lc = body.username.lower() if isinstance(body.username, str) else "_"
+    if not limiter.allow(f"login:{client_ip}:{username_lc}"):
+        raise HTTPException(
+            status_code=429,
+            detail="too many attempts",
+            headers={"Retry-After": "60"},
+        )
     users = UserRepository(session)
     user = users.authenticate(body.username, body.password)
     if user is None:

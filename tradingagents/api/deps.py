@@ -9,8 +9,31 @@ from tradingagents.api.auth_repository import SessionRepository, UserRepository
 from tradingagents.api.config import get_api_settings
 from tradingagents.api.db import SessionLocal, get_session
 from tradingagents.api.models import User
+from tradingagents.api.rate_limit import InMemoryBackend, SlidingWindow
 from tradingagents.api.repositories import AnalysisRunRepository
 from tradingagents.worker.jobs import run_analysis_task
+
+
+_login_limiter: SlidingWindow | None = None
+
+
+def get_login_rate_limiter() -> SlidingWindow:
+    """Singleton sliding-window limiter for /auth/login.
+
+    Production deployments should swap the backend to ``RedisBackend(redis_url)``
+    so the limit is shared across API replicas. The default is an in-process
+    in-memory backend, which is sufficient for single-process deployments and
+    for tests.
+    """
+    global _login_limiter
+    if _login_limiter is None:
+        settings = get_api_settings()
+        _login_limiter = SlidingWindow(
+            backend=InMemoryBackend(),
+            limit=settings.login_rate_limit_per_min,
+            window_seconds=60,
+        )
+    return _login_limiter
 
 
 def get_db_session() -> Iterator[Session]:

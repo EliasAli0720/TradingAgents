@@ -12,3 +12,14 @@ import pytest
 @pytest.fixture(autouse=True)
 def _disable_secure_cookies(monkeypatch):
     monkeypatch.setenv("TRADINGAGENTS_API_COOKIE_SECURE", "false")
+
+
+@pytest.fixture(autouse=True)
+def _reset_login_limiter():
+    """The /auth/login limiter is a process-global singleton. Reset it
+    between tests so accumulated attempts don't bleed across test cases."""
+    from tradingagents.api import deps
+
+    deps._login_limiter = None
+    yield
+    deps._login_limiter = None
