@@ -371,6 +371,15 @@ server {
 6. **会话存储**：当前 `auth_user` 存在 `st.session_state`，重启 streamlit 即失效；如果要"记住我"必须自己加 cookie/token 层。
 7. **`.env` 不要提交**，并确保 systemd 单元里 `EnvironmentFile` 文件权限 `chmod 600`。
 
+### 分析 HTTP API 部署补充（`tradingagents.api`）
+
+- **必须走 HTTPS**：API 下发的 `tradingagents_session` cookie 默认 `Secure`，明文 HTTP 下浏览器会丢弃；本地开发可暂时 `TRADINGAGENTS_API_COOKIE_SECURE=false`，生产**禁止关闭**。
+- **CSRF**：状态变更（`POST/PATCH/DELETE`）必须同时携带 cookie `tradingagents_csrf` 与请求头 `X-CSRF-Token`，二者字符串相等。前端 JS 可读 csrf cookie，session cookie 是 `HttpOnly` 拿不到。
+- **首位注册即 admin**：表内零用户时 `POST /auth/register` 自动赋 `admin`，其后默认 `viewer`，需 admin 通过 `PATCH /admin/users/{id}` 提升。
+- **限流**：`/auth/login` 默认每分钟 5 次（按 IP+username 滑动窗口）。多实例部署需要把 `tradingagents/api/rate_limit.py:RedisBackend` 接进 `get_login_rate_limiter()`，否则各实例计数独立。
+- **session 表清理**：`sessions` 永久增长，需要 cron / Celery beat 周期删 `expires_at < now() - 30d` 的行（后续 P1-3 保留策略统一做）。
+- **与 Streamlit auth 独立**：API 用自己 PostgreSQL 的 `users` 表，跟 `tradingbot/auth/users.db` 没有任何同步；两边账号需要分别建。
+
 ---
 
 ## 7. 持久化路径
