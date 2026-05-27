@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from threading import Thread
 
 import pytest
@@ -499,3 +499,57 @@ def test_mark_running_is_idempotent_for_running_status():
     event_types = [event.event_type for event in repo.list_events(run.run_id)]
     assert saved.started_at == first_started_at
     assert event_types == ["run_queued", "run_started"]
+
+
+def test_scoped_repository_cannot_claim_other_users_run_for_dispatch():
+    session = _session()
+    unscoped_repo = AnalysisRunRepository(session)
+    run = unscoped_repo.create_run(
+        ticker="NVDA",
+        trade_date=date(2026, 1, 15),
+        asset_type="stock",
+        analysts=["market"],
+        user_id="usr_b",
+    )
+    session.commit()
+
+    scoped_repo = AnalysisRunRepository(session, user_id="usr_a")
+    claimed = scoped_repo.claim_next_queued_for_dispatch(
+        user_id="usr_b",
+        lease_expires_at=datetime.now(timezone.utc) + timedelta(seconds=600),
+    )
+    session.commit()
+
+    saved = unscoped_repo.get_run(run.run_id)
+    assert claimed is None
+    assert saved.status == "queued"
+    assert saved.dispatched_at is None
+    assert saved.lease_expires_at is None
+    assert [event.event_type for event in unscoped_repo.list_events(run.run_id)] == [
+        "run_queued"
+    ]
+
+
+def test_scoped_repository_cannot_claim_other_users_run_as_running():
+    session = _session()
+    unscoped_repo = AnalysisRunRepository(session)
+    run = unscoped_repo.create_run(
+        ticker="NVDA",
+        trade_date=date(2026, 1, 15),
+        asset_type="stock",
+        analysts=["market"],
+        user_id="usr_b",
+    )
+    session.commit()
+
+    scoped_repo = AnalysisRunRepository(session, user_id="usr_a")
+    claimed = scoped_repo.claim_queued_run(run.run_id)
+    session.commit()
+
+    saved = unscoped_repo.get_run(run.run_id)
+    assert claimed is None
+    assert saved.status == "queued"
+    assert saved.started_at is None
+    assert [event.event_type for event in unscoped_repo.list_events(run.run_id)] == [
+        "run_queued"
+    ]

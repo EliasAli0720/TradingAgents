@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from tradingagents.api.models import AnalysisRun, AnalysisRunEvent, AnalysisRunResult
 
 
+ACTIVE_STATUSES = {"dispatching", "running"}
 TERMINAL_STATUSES = {"succeeded", "failed", "cancelled"}
 
 
@@ -66,6 +67,112 @@ class AnalysisRunRepository:
         run = self.require_run(run_id)
         run.celery_task_id = task_id
 
+    def count_active_runs(self, user_id: Optional[str] = None) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(AnalysisRun)
+            .where(AnalysisRun.status.in_(ACTIVE_STATUSES))
+        )
+        if user_id is not None:
+            stmt = stmt.where(AnalysisRun.user_id == user_id)
+        elif self.user_id is not None:
+            stmt = stmt.where(AnalysisRun.user_id == self.user_id)
+
+        return int(self.session.scalar(stmt) or 0)
+
+    def users_with_queued_runs(self, limit: int) -> list[str]:
+        if limit <= 0:
+            return []
+
+        ranked = (
+            select(
+                AnalysisRun.user_id.label("user_id"),
+                AnalysisRun.priority.label("priority"),
+                AnalysisRun.created_at.label("created_at"),
+                AnalysisRun.run_id.label("run_id"),
+                func.row_number()
+                .over(
+                    partition_by=AnalysisRun.user_id,
+                    order_by=(
+                        AnalysisRun.priority.desc(),
+                        AnalysisRun.created_at.asc(),
+                        AnalysisRun.run_id.asc(),
+                    ),
+                )
+                .label("queue_rank"),
+            )
+            .where(AnalysisRun.status == "queued")
+            .subquery()
+        )
+        stmt = (
+            select(ranked.c.user_id)
+            .where(ranked.c.queue_rank == 1)
+            .order_by(
+                ranked.c.priority.desc(),
+                ranked.c.created_at.asc(),
+                ranked.c.run_id.asc(),
+            )
+            .limit(limit)
+        )
+        if self.user_id is not None:
+            stmt = stmt.where(ranked.c.user_id == self.user_id)
+
+        return list(self.session.scalars(stmt))
+
+    def claim_next_queued_for_dispatch(
+        self, user_id: str, lease_expires_at: datetime
+    ) -> Optional[AnalysisRun]:
+        if self.user_id is not None and user_id != self.user_id:
+            return None
+
+        now = utcnow()
+        candidate_id = self.session.scalar(
+            select(AnalysisRun.run_id)
+            .where(AnalysisRun.user_id == user_id, AnalysisRun.status == "queued")
+            .order_by(
+                AnalysisRun.priority.desc(),
+                AnalysisRun.created_at.asc(),
+                AnalysisRun.run_id.asc(),
+            )
+            .limit(1)
+        )
+        if candidate_id is None:
+            return None
+
+        result = self.session.execute(
+            update(AnalysisRun)
+            .where(
+                AnalysisRun.run_id == candidate_id,
+                AnalysisRun.user_id == user_id,
+                AnalysisRun.status == "queued",
+            )
+            .values(
+                status="dispatching",
+                dispatched_at=now,
+                lease_expires_at=lease_expires_at,
+                updated_at=now,
+                current_step="Dispatching analysis",
+            )
+            .execution_options(synchronize_session=False)
+        )
+        if result.rowcount != 1:
+            return None
+
+        self.add_event(
+            candidate_id,
+            "run_dispatching",
+            {"run_id": candidate_id, "status": "dispatching"},
+        )
+        return self.require_run(candidate_id)
+
+    def list_runs_for_user(self, user_id: str) -> list[AnalysisRun]:
+        stmt = (
+            select(AnalysisRun)
+            .where(AnalysisRun.user_id == user_id)
+            .order_by(AnalysisRun.created_at.asc(), AnalysisRun.run_id.asc())
+        )
+        return list(self.session.scalars(stmt))
+
     def queue_position(self, run_id: str) -> Optional[int]:
         run = self.get_run(run_id)
         if run is None or run.status != "queued":
@@ -118,10 +225,22 @@ class AnalysisRunRepository:
 
     def claim_queued_run(self, run_id: str) -> Optional[AnalysisRun]:
         now = utcnow()
+        conditions = [
+            AnalysisRun.run_id == run_id,
+            AnalysisRun.status.in_(("queued", "dispatching")),
+        ]
+        if self.user_id is not None:
+            conditions.append(AnalysisRun.user_id == self.user_id)
+
         result = self.session.execute(
             update(AnalysisRun)
-            .where(AnalysisRun.run_id == run_id, AnalysisRun.status == "queued")
-            .values(status="running", started_at=now, current_step="Analysis running")
+            .where(*conditions)
+            .values(
+                status="running",
+                started_at=now,
+                current_step="Analysis running",
+                updated_at=now,
+            )
             .execution_options(synchronize_session=False)
         )
         if result.rowcount != 1:
