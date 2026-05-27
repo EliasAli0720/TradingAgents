@@ -25,7 +25,26 @@ export type ValidateResult = {
   message: string;
 };
 
+export type ModelChoice = { id: string; label: string };
+
+export type ProviderOption = {
+  id: string;
+  label: string;
+  required_env_var: string | null;
+  default_backend_url: string | null;
+  backend_url_editable: boolean;
+  supports_custom_model: boolean;
+  quick_models: ModelChoice[];
+  deep_models: ModelChoice[];
+};
+
+export type ModelOptions = { providers: ProviderOption[] };
+
 export const settingsApi = {
+  async options(): Promise<ModelOptions> {
+    const { data } = await http.get<ModelOptions>('/settings/model/options');
+    return data;
+  },
   async get(): Promise<ModelSettings> {
     const { data } = await http.get<ModelSettings>('/settings/model');
     return data;

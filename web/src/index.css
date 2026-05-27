@@ -54,3 +54,31 @@ html, body, #root { height: 100%; background: #0e1117; color: #fafafa; }
 .nav-radio a.active     { @apply bg-white/5; }
 .nav-radio a.active .dot{ @apply bg-[#ff4b4b] border-[#ff4b4b]; }
 .nav-radio .group-label { @apply text-xs uppercase tracking-widest text-muted mt-3 mb-1 px-2; }
+
+/* ── Streamlit-style tabs ─────────────────────────────────────────── */
+.tabs           { @apply flex flex-wrap gap-1 border-b border-border mb-4; }
+.tabs button    { @apply px-3 py-2 text-sm text-muted border-b-2 border-transparent -mb-px transition; }
+.tabs button:hover  { @apply text-text; }
+.tabs button.active { @apply text-text border-[#ff4b4b]; }
+
+/* ── Markdown prose ───────────────────────────────────────────────── */
+.prose-md { @apply text-sm leading-7 text-text; }
+.prose-md h1 { @apply text-xl font-bold mt-5 mb-3 border-b border-border pb-2; }
+.prose-md h2 { @apply text-lg font-semibold mt-5 mb-2; }
+.prose-md h3 { @apply text-base font-semibold mt-4 mb-2 text-text; }
+.prose-md h4 { @apply text-sm font-semibold mt-3 mb-1 text-muted uppercase tracking-wide; }
+.prose-md p  { @apply my-2; }
+.prose-md ul { @apply list-disc pl-6 my-2 space-y-1; }
+.prose-md ol { @apply list-decimal pl-6 my-2 space-y-1; }
+.prose-md li { @apply leading-6; }
+.prose-md strong { @apply text-text font-semibold; }
+.prose-md em { @apply italic text-text/90; }
+.prose-md code { @apply font-mono text-xs bg-bg border border-border rounded px-1 py-0.5; }
+.prose-md pre  { @apply font-mono text-xs bg-bg border border-border rounded p-3 overflow-x-auto my-3; }
+.prose-md pre code { @apply border-0 bg-transparent p-0; }
+.prose-md blockquote { @apply border-l-4 border-info pl-3 my-3 text-muted; }
+.prose-md a  { @apply text-[#ff4b4b] underline; }
+.prose-md hr { @apply border-border my-4; }
+.prose-md table { @apply w-full text-sm my-3 border-collapse; }
+.prose-md table th, .prose-md table td { @apply border border-border px-3 py-2 text-left; }
+.prose-md table th { @apply bg-bg/50 text-muted font-medium; }

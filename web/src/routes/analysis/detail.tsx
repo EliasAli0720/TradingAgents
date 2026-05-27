@@ -7,14 +7,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { Subheader, ErrorBox } from '@/components/ui/Page';
 import { StatusBadge } from './list';
 import { t } from '@/i18n';
-
-const SIGNAL_COLORS: Record<string, { fg: string; bg: string }> = {
-  BUY:          { fg: '#4CAF50', bg: '#1b2a1d' },
-  OVERWEIGHT:   { fg: '#2196F3', bg: '#102538' },
-  HOLD:         { fg: '#37474F', bg: '#1c2126' },
-  UNDERWEIGHT:  { fg: '#FFB300', bg: '#2a2417' },
-  SELL:         { fg: '#F44336', bg: '#2a1818' },
-};
+import DecisionCard from '@/components/run/DecisionCard';
+import AgentReportTabs, { type ReportMap } from '@/components/run/AgentReportTabs';
 
 export default function AnalysisDetailPage() {
   const { runId } = useParams<{ runId: string }>();
@@ -56,8 +50,7 @@ export default function AnalysisDetailPage() {
 
   const r = run.data;
   const active = r.status === 'queued' || r.status === 'running';
-  const sig = (result.data?.decision ?? '').toUpperCase();
-  const sigColor = SIGNAL_COLORS[sig];
+  const reports = (result.data?.reports ?? {}) as ReportMap;
 
   return (
     <div>
@@ -78,43 +71,37 @@ export default function AnalysisDetailPage() {
         )}
       </div>
 
-      {sigColor && (
-        <div
-          className="rounded-md mb-4 px-4 py-3 border-2"
-          style={{ background: sigColor.bg, borderColor: sigColor.fg }}
-        >
-          <span className="text-xs uppercase tracking-widest text-muted">最终信号</span>
-          <div className="text-2xl font-bold" style={{ color: sigColor.fg }}>{sig}</div>
-        </div>
-      )}
-
-      <Subheader>实时事件（SSE）</Subheader>
-      <div className="card">
-        <pre className="text-xs max-h-72 overflow-auto font-mono whitespace-pre-wrap">
-{events.length === 0 ? '（等待事件…）' : events.map((e) => `${e.event}  ${JSON.stringify(e.data)}`).join('\n')}
-        </pre>
-      </div>
-
-      {r.status === 'failed' && r.error && (
-        <>
-          <Subheader>失败原因</Subheader>
-          <ErrorBox><pre className="text-xs whitespace-pre-wrap">{r.error}</pre></ErrorBox>
-        </>
-      )}
-
       {r.status === 'succeeded' && (
+        <DecisionCard
+          inputs={{
+            decision: result.data?.decision,
+            final_trade_decision: typeof reports.final_trade_decision === 'string' ? reports.final_trade_decision : undefined,
+            trader_investment_plan: typeof reports.trader_investment_plan === 'string' ? reports.trader_investment_plan : undefined,
+          }}
+        />
+      )}
+
+      {r.status === 'succeeded' ? (
+        result.isLoading ? (
+          <div className="text-muted text-sm">加载结果…</div>
+        ) : result.data ? (
+          <AgentReportTabs reports={reports} />
+        ) : (
+          <ErrorBox>结果加载失败</ErrorBox>
+        )
+      ) : (
         <>
-          <Subheader>分析结果</Subheader>
-          {result.isLoading ? (
-            <div className="text-muted text-sm">加载结果…</div>
-          ) : result.data ? (
-            <div className="card">
-              <pre className="text-xs max-h-96 overflow-auto whitespace-pre-wrap">
-{JSON.stringify(result.data.reports, null, 2)}
-              </pre>
-            </div>
-          ) : (
-            <ErrorBox>结果加载失败</ErrorBox>
+          <Subheader>实时事件（SSE）</Subheader>
+          <div className="card">
+            <pre className="text-xs max-h-72 overflow-auto font-mono whitespace-pre-wrap">
+{events.length === 0 ? '（等待事件…）' : events.map((e) => `${e.event}  ${JSON.stringify(e.data)}`).join('\n')}
+            </pre>
+          </div>
+          {r.status === 'failed' && r.error && (
+            <>
+              <Subheader>失败原因</Subheader>
+              <ErrorBox><pre className="text-xs whitespace-pre-wrap">{r.error}</pre></ErrorBox>
+            </>
           )}
         </>
       )}
