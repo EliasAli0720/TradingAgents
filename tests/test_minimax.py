@@ -25,33 +25,38 @@ def _client(model: str = "MiniMax-M2.7"):
 
 @pytest.mark.unit
 class TestMinimaxReasoningSplit:
+    # reasoning_split must ride in extra_body — openai SDK >=1.x rejects
+    # unknown top-level kwargs in Completions.create() and raises
+    # "got an unexpected keyword argument 'reasoning_split'".
     def test_request_payload_sets_reasoning_split(self):
         payload = _client()._get_request_payload([HumanMessage(content="hi")])
-        assert payload.get("reasoning_split") is True
+        assert payload.get("extra_body", {}).get("reasoning_split") is True
+        assert "reasoning_split" not in payload  # never at top level
 
     def test_caller_supplied_reasoning_split_is_preserved(self):
-        """If the user explicitly sets reasoning_split, don't override it
-        (setdefault semantics — caller wins)."""
+        """If the user explicitly sets reasoning_split in extra_body,
+        don't override it (setdefault semantics — caller wins)."""
         client = _client()
         payload = client._get_request_payload(
             [HumanMessage(content="hi")],
-            reasoning_split=False,
+            extra_body={"reasoning_split": False},
         )
-        # langchain may or may not surface that kwarg into the payload;
-        # what matters is we don't blindly overwrite a non-default value
-        # the caller passed. setdefault leaves an existing value alone.
-        assert payload.get("reasoning_split") in (False, True)
+        assert payload.get("extra_body", {}).get("reasoning_split") in (False, True)
 
     def test_non_reasoning_minimax_does_not_inject_reasoning_split(self):
         """Coding Plan / MiniMax-Text-01 / any non-M2-prefixed model must NOT
-        receive reasoning_split — the openai SDK rejects unknown kwargs with
-        TypeError (#826)."""
+        receive reasoning_split anywhere — the openai SDK rejects unknown
+        kwargs with TypeError (#826), and even via extra_body the upstream
+        endpoint would 400 on the unexpected field."""
         for model in ("minimax-text-01", "MiniMax-Coding-Plan"):
             payload = _client(model)._get_request_payload(
                 [HumanMessage(content="hi")]
             )
             assert "reasoning_split" not in payload, (
                 f"{model!r} payload unexpectedly contains reasoning_split"
+            )
+            assert "reasoning_split" not in (payload.get("extra_body") or {}), (
+                f"{model!r} extra_body unexpectedly contains reasoning_split"
             )
 
 

@@ -6,8 +6,14 @@ from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
-from tradingagents.api.db import Base, create_db_engine
-from tradingagents.api.models import AnalysisRun, AnalysisRunEvent, AnalysisRunResult
+from tradingagents.api.db import Base, create_db_engine, ensure_additive_schema
+from tradingagents.api.models import (
+    AnalysisRun,
+    AnalysisRunEvent,
+    AnalysisRunResult,
+    User,
+    UserModelSetting,
+)
 from tradingagents.api.repositories import AnalysisRunRepository
 
 
@@ -113,6 +119,76 @@ def test_create_db_engine_shares_in_memory_sqlite_across_threaded_sessions():
     thread.join()
 
     assert result["ticker"] == "NVDA"
+
+
+def test_ensure_additive_schema_reverts_minimax_cn_anthropic_url_to_v1():
+    """The startup migration heals rows that were previously written to the
+    Anthropic-compatible endpoint, putting them back on the OpenAI-compatible
+    /v1 path which is what our LLM client expects. Custom proxy URLs that
+    users have explicitly set must not be touched."""
+    engine = create_db_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine, future=True)
+    now = datetime.now(timezone.utc)
+
+    with Session() as session:
+        session.add_all(
+            [
+                User(
+                    user_id="usr_minimax",
+                    username="minimax_user",
+                    password_hash="hash",
+                    role="operator",
+                    is_active=True,
+                    created_at=now,
+                ),
+                User(
+                    user_id="usr_custom",
+                    username="custom_user",
+                    password_hash="hash",
+                    role="operator",
+                    is_active=True,
+                    created_at=now,
+                ),
+            ]
+        )
+        session.add(
+            UserModelSetting(
+                user_id="usr_minimax",
+                llm_provider="minimax-cn",
+                deep_think_llm="MiniMax-M2.7",
+                quick_think_llm="MiniMax-M2.7-highspeed",
+                backend_url="https://api.minimaxi.com/anthropic",
+                encrypted_api_key=None,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        session.add(
+            UserModelSetting(
+                user_id="usr_custom",
+                llm_provider="minimax-cn",
+                deep_think_llm="MiniMax-M2.7",
+                quick_think_llm="MiniMax-M2.7-highspeed",
+                backend_url="https://gateway.example.com/minimax",
+                encrypted_api_key=None,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        session.commit()
+
+    ensure_additive_schema(engine)
+
+    with Session() as session:
+        assert (
+            session.get(UserModelSetting, "usr_minimax").backend_url
+            == "https://api.minimaxi.com/v1"
+        )
+        assert (
+            session.get(UserModelSetting, "usr_custom").backend_url
+            == "https://gateway.example.com/minimax"
+        )
 
 
 def test_repository_creates_run_and_queued_event():

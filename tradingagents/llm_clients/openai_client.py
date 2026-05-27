@@ -132,7 +132,13 @@ class MinimaxChatOpenAI(NormalizedChatOpenAI):
     def _get_request_payload(self, input_, *, stop=None, **kwargs):
         payload = super()._get_request_payload(input_, stop=stop, **kwargs)
         if get_capabilities(self.model_name).requires_reasoning_split:
-            payload.setdefault("reasoning_split", True)
+            # openai SDK >=1.x rejects unknown top-level kwargs in
+            # Completions.create(). Non-standard provider params must ride
+            # in extra_body, which the SDK merges into the request JSON
+            # without kwarg validation.
+            extra_body = dict(payload.get("extra_body") or {})
+            extra_body.setdefault("reasoning_split", True)
+            payload["extra_body"] = extra_body
         return payload
 
 

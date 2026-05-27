@@ -64,6 +64,19 @@ def ensure_additive_schema(db_engine) -> None:
             connection.execute(
                 text("ALTER TABLE user_model_settings ADD COLUMN encrypted_api_key TEXT")
             )
+    # Reverse the prior bad migration that pointed minimax-cn at the
+    # Anthropic-compatible endpoint. The OpenAI-compatible LLM client we
+    # use expects /v1.
+    if {"llm_provider", "backend_url"}.issubset(columns):
+        with db_engine.begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE user_model_settings "
+                    "SET backend_url = 'https://api.minimaxi.com/v1' "
+                    "WHERE llm_provider = 'minimax-cn' "
+                    "AND backend_url = 'https://api.minimaxi.com/anthropic'"
+                )
+            )
 
 
 def get_session() -> Iterator[Session]:

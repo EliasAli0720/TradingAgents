@@ -19,9 +19,17 @@ class ProviderSeed:
 
 
 PROVIDER_SEEDS = [
-    ProviderSeed("openai", "OpenAI", None),
-    ProviderSeed("google", "Google", None),
-    ProviderSeed("anthropic", "Anthropic", None),
+    # openai: official endpoint per developers.openai.com/api/docs.
+    # langchain_openai.ChatOpenAI defaults to this when base_url is None,
+    # but seeding it makes the value visible in the SPA settings UI.
+    ProviderSeed("openai", "OpenAI", "https://api.openai.com/v1"),
+    # google: Gemini Developer API endpoint per ai.google.dev/api.
+    # Honored by langchain_google_genai when base_url is passed through.
+    ProviderSeed("google", "Google", "https://generativelanguage.googleapis.com/v1beta"),
+    # anthropic: official default per langchain_anthropic.ChatAnthropic
+    # (anthropic_api_url alias 'base_url'). No /v1 suffix — the Anthropic
+    # SDK appends versioned paths itself.
+    ProviderSeed("anthropic", "Anthropic", "https://api.anthropic.com"),
     ProviderSeed("xai", "xAI", "https://api.x.ai/v1"),
     ProviderSeed("deepseek", "DeepSeek", "https://api.deepseek.com"),
     ProviderSeed("qwen", "Qwen International", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"),
@@ -31,6 +39,8 @@ PROVIDER_SEEDS = [
     ProviderSeed("minimax", "MiniMax Global", "https://api.minimax.io/v1"),
     ProviderSeed("minimax-cn", "MiniMax China", "https://api.minimaxi.com/v1"),
     ProviderSeed("openrouter", "OpenRouter", "https://openrouter.ai/api/v1", True),
+    # azure: per-customer deployment URL, no universal default; user must
+    # supply it themselves, hence editable=True.
     ProviderSeed("azure", "Azure OpenAI", None, True),
     ProviderSeed("ollama", "Ollama", "http://localhost:11434/v1", True),
 ]
@@ -44,16 +54,15 @@ class LLMModelCatalogRepository:
         self._seeded = False
 
     def ensure_seeded(self) -> None:
-        """Initialize the DB-backed model catalog from application defaults once."""
+        """Sync the DB-backed model catalog from application defaults.
+
+        Runs once per repository instance (caller boundary = HTTP request).
+        Provider rows are upserted; model option rows are fully rebuilt
+        from MODEL_OPTIONS so edits to the Python catalog propagate on
+        the next process start without one-off SQL migrations.
+        """
         if self._seeded:
             return
-        existing_provider_count = self.session.scalar(
-            select(func.count()).select_from(LLMProviderOption)
-        )
-        if existing_provider_count:
-            self._seeded = True
-            return
-
         provider_rows = {
             row.provider_id: row
             for row in self.session.scalars(select(LLMProviderOption)).all()
@@ -77,6 +86,10 @@ class LLMModelCatalogRepository:
 
         self.session.flush()
 
+        # Rebuild model_options to match the current Python catalog. Cheap
+        # (~70 inserts across all providers) and means dropping or renaming
+        # a model in MODEL_OPTIONS takes effect on the next API start
+        # rather than requiring a hand-written SQL migration each time.
         for seed in PROVIDER_SEEDS:
             self.session.execute(
                 delete(LLMModelOption).where(LLMModelOption.provider_id == seed.provider_id)
