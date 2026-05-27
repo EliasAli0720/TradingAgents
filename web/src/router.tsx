@@ -1,0 +1,44 @@
+import { createBrowserRouter, Navigate } from 'react-router-dom';
+import AppLayout from './components/layout/AppLayout';
+import RequireAuth from './components/layout/RequireAuth';
+import RequireRole from './components/layout/RequireRole';
+import PortfolioPage from './routes/placeholder/portfolio';
+import PerformancePage from './routes/placeholder/performance';
+import TradesPage from './routes/placeholder/trades';
+import RiskPage from './routes/placeholder/risk';
+import LoginPage from './routes/login';
+import AnalysisListPage from './routes/analysis/list';
+import AnalysisNewPage from './routes/analysis/new';
+import AnalysisDetailPage from './routes/analysis/detail';
+import ModelSettingsPage from './routes/settings/model';
+import AccountSettingsPage from './routes/settings/account';
+import AdminUsersPage from './routes/admin/users';
+import AdminRunsPage from './routes/admin/runs';
+
+export const router = createBrowserRouter([
+  { path: '/login', element: <LoginPage /> },
+  {
+    element: <RequireAuth><AppLayout /></RequireAuth>,
+    children: [
+      { path: '/', element: <Navigate to="/analysis" replace /> },
+      { path: '/analysis', element: <AnalysisListPage /> },
+      { path: '/analysis/new', element: <AnalysisNewPage /> },
+      { path: '/analysis/:runId', element: <AnalysisDetailPage /> },
+      { path: '/portfolio', element: <PortfolioPage /> },
+      { path: '/performance', element: <PerformancePage /> },
+      { path: '/trades', element: <TradesPage /> },
+      { path: '/risk', element: <RiskPage /> },
+      { path: '/settings/model', element: <ModelSettingsPage /> },
+      { path: '/settings/account', element: <AccountSettingsPage /> },
+      {
+        path: '/admin/users',
+        element: <RequireRole roles={['admin']}><AdminUsersPage /></RequireRole>,
+      },
+      {
+        path: '/admin/runs',
+        element: <RequireRole roles={['admin']}><AdminRunsPage /></RequireRole>,
+      },
+    ],
+  },
+  { path: '*', element: <Navigate to="/" replace /> },
+]);

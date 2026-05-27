@@ -277,15 +277,23 @@ GET /settings/model/options
 ### 校验设置
 
 ```http
-POST /settings/validate
+POST /settings/model/validate
 ```
 
-当前实现中的 `POST /settings/model/validate` 只校验当前用户模型配置是否具备可用密钥来源：用户加密密钥、服务端统一环境变量，或 provider 不需要密钥。它不会真实请求模型供应商。
+当前实现中的 `POST /settings/model/validate` 会先校验当前用户模型配置是否具备可用密钥来源：用户加密密钥、服务端统一环境变量，或 provider 不需要密钥。密钥来源可用时，接口会使用当前配置初始化 LLM client，发起短超时、低成本 live probe。
 
-后续事项：
+live probe 结果会归类为：
 
-- 新增模型 live probe：使用当前配置初始化 LLM client，发送短超时、低成本请求，例如要求返回固定字符串 `pong`。
-- live probe 需要区分 key 无效、模型不存在、endpoint 不通、权限不足、超时和供应商错误。
+- `success`
+- `invalid_api_key`
+- `model_not_found`
+- `endpoint_unreachable`
+- `permission_denied`
+- `timeout`
+- `provider_error`
+
+说明：
+
 - live probe 只能证明“模型可调用”，不能证明模型回答内容真实可靠。回答真实性需要业务层补充数据源引用、交叉验证、置信度标记和人工审核机制。
 
 ## 运行组件

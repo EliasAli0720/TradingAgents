@@ -9,6 +9,7 @@ from tradingagents.api.auth_repository import SessionRepository, UserRepository
 from tradingagents.api.config import get_api_settings
 from tradingagents.api.db import SessionLocal, get_session
 from tradingagents.api.models import User
+from tradingagents.api.model_probe import probe_model
 from tradingagents.api.rate_limit import InMemoryBackend, SlidingWindow
 from tradingagents.api.repositories import AnalysisRunRepository
 from tradingagents.worker.jobs import run_analysis_task
@@ -55,6 +56,10 @@ def revoke_analysis_task(task_id: str) -> None:
 
 def get_task_revoke() -> Callable[[str], None]:
     return revoke_analysis_task
+
+
+def get_model_probe():
+    return probe_model
 
 
 def get_stream_session_factory():

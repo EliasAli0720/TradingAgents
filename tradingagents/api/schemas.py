@@ -191,6 +191,18 @@ class ModelSettingsValidationResponse(BaseModel):
     required_env_var: Optional[str]
     api_key_source: Literal["user", "service", "none", "not_required"]
     message: str
+    probe_status: Optional[
+        Literal[
+            "success",
+            "invalid_api_key",
+            "model_not_found",
+            "endpoint_unreachable",
+            "permission_denied",
+            "timeout",
+            "provider_error",
+        ]
+    ] = None
+    probe_message: Optional[str] = None
 
 
 UserRole = Literal["admin", "operator", "viewer"]

@@ -3,7 +3,8 @@ from sqlalchemy.orm import sessionmaker
 
 from tradingagents.api.app import create_app
 from tradingagents.api.db import Base, create_db_engine
-from tradingagents.api.deps import get_db_session
+from tradingagents.api.deps import get_db_session, get_model_probe
+from tradingagents.api.model_probe import ModelProbeResult
 
 
 FERNET_KEY = "dBBj0g2y16HOVnBCwG9r20eyHmxtPXgvBXVHfJfRB4U="
@@ -228,6 +229,10 @@ def test_validate_model_settings_reports_user_service_and_missing_key(monkeypatc
     client = _client()
     csrf = _login(client)
 
+    client.app.dependency_overrides[get_model_probe] = lambda: (
+        lambda _request: ModelProbeResult(status="success", message="probe returned pong")
+    )
+
     response = client.put(
         "/settings/model",
         json={
@@ -283,3 +288,89 @@ def test_validate_model_settings_reports_user_service_and_missing_key(monkeypatc
     assert user_key.status_code == 200
     assert user_key.json()["valid"] is True
     assert user_key.json()["api_key_source"] == "user"
+
+
+def test_validate_model_settings_runs_live_probe_with_service_key(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-service-abcdef123456")
+    client = _client()
+    csrf = _login(client)
+    calls = []
+
+    def fake_probe(request):
+        calls.append(request)
+        return ModelProbeResult(status="success", message="probe returned pong")
+
+    client.app.dependency_overrides[get_model_probe] = lambda: fake_probe
+
+    response = client.put(
+        "/settings/model",
+        json={
+            "llm_provider": "openai",
+            "deep_think_llm": "gpt-5.4",
+            "quick_think_llm": "gpt-5.4-mini",
+            "backend_url": "https://llm.example.com/v1",
+        },
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert response.status_code == 200
+
+    validated = client.post(
+        "/settings/model/validate",
+        headers={"X-CSRF-Token": csrf},
+    )
+
+    assert validated.status_code == 200
+    assert validated.json() == {
+        "valid": True,
+        "provider": "openai",
+        "required_env_var": "OPENAI_API_KEY",
+        "api_key_source": "service",
+        "message": "service API key configured in OPENAI_API_KEY",
+        "probe_status": "success",
+        "probe_message": "probe returned pong",
+    }
+    assert len(calls) == 1
+    assert calls[0].provider == "openai"
+    assert calls[0].model == "gpt-5.4-mini"
+    assert calls[0].backend_url == "https://llm.example.com/v1"
+    assert calls[0].api_key == "sk-service-abcdef123456"
+
+
+def test_validate_model_settings_live_probe_failure_marks_config_invalid(monkeypatch):
+    monkeypatch.setenv("MODEL_API_KEY_ENCRYPTION_KEY", FERNET_KEY)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    client = _client()
+    csrf = _login(client)
+
+    def fake_probe(_request):
+        return ModelProbeResult(
+            status="model_not_found",
+            message="model was not found by provider",
+        )
+
+    client.app.dependency_overrides[get_model_probe] = lambda: fake_probe
+
+    response = client.put(
+        "/settings/model",
+        json={
+            "llm_provider": "qwen",
+            "deep_think_llm": "qwen3.6-plus",
+            "quick_think_llm": "missing-model",
+            "backend_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+            "api_key": "sk-user-abcdef123456",
+        },
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert response.status_code == 200
+
+    validated = client.post(
+        "/settings/model/validate",
+        headers={"X-CSRF-Token": csrf},
+    )
+
+    assert validated.status_code == 200
+    assert validated.json()["valid"] is False
+    assert validated.json()["api_key_source"] == "user"
+    assert validated.json()["probe_status"] == "model_not_found"
+    assert validated.json()["probe_message"] == "model was not found by provider"

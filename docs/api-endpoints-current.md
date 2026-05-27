@@ -282,7 +282,7 @@
 
 ### POST /settings/model/validate
 
-需要登录和 CSRF。校验当前用户模型配置是否具备可用密钥来源。
+需要登录和 CSRF。校验当前用户模型配置是否具备可用密钥来源，并在密钥来源可用时执行一次低成本 live probe。
 
 成功响应：`200`
 
@@ -292,24 +292,25 @@
   "provider": "openai",
   "required_env_var": "OPENAI_API_KEY",
   "api_key_source": "user",
-  "message": "user API key configured for provider openai"
+  "message": "user API key configured for provider openai",
+  "probe_status": "success",
+  "probe_message": "probe returned pong"
 }
 ```
 
 字段说明：
 
-- `valid`：当前模型配置是否具备可用密钥来源
+- `valid`：当前模型配置是否通过密钥来源校验与 live probe
 - `required_env_var`：服务端兜底密钥对应的环境变量；`ollama` 为 `null`
 - `api_key_source`：`user`、`service`、`none` 或 `not_required`
+- `probe_status`：live probe 结果；可能为 `success`、`invalid_api_key`、`model_not_found`、`endpoint_unreachable`、`permission_denied`、`timeout`、`provider_error`
+- `probe_message`：live probe 的简短说明
 
 常见错误：
 
 - `404`：当前用户尚未配置模型
 
-后续事项：
-
-- 当前接口只校验密钥来源，不会真实请求模型供应商。需要新增 live probe：使用当前配置初始化 LLM client，发送短超时、低成本探测请求，例如要求返回固定字符串 `pong`，用于验证 API key、backend URL、模型 ID、权限和网络连通性。
-- live probe 只能证明“模型可调用”，不能证明模型后续回答内容真实可靠。回答真实性需要业务层补充数据源引用、交叉验证、置信度标记和人工审核机制。
+说明：live probe 只能证明“模型可调用”，不能证明模型后续回答内容真实可靠。回答真实性需要业务层补充数据源引用、交叉验证、置信度标记和人工审核机制。
 
 ## 分析任务接口
 

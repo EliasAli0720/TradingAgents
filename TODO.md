@@ -6,22 +6,7 @@
 
 ## P0 / P1
 
-### 1. 模型配置 live probe
-
-当前 `POST /settings/model/validate` 只校验当前用户模型配置是否具备可用密钥来源，不会真实请求模型供应商。
-
-需要新增低成本、短超时的模型探测能力，例如用当前配置初始化 LLM client，发送固定字符串请求并期待返回 `pong`。探测结果至少应区分：
-
-- API key 无效
-- 模型不存在
-- endpoint 不通
-- 权限不足
-- 超时
-- 供应商错误
-
-注意：live probe 只能证明“模型可调用”，不能证明后续回答内容真实可靠。回答真实性仍需要业务层补充数据源引用、交叉验证、置信度标记和人工审核机制。
-
-### 2. Session 表清理
+### 1. Session 表清理
 
 API 的 `sessions` 表会持续增长。需要增加 cron、Celery beat 或同等机制，周期性删除：
 
@@ -31,7 +16,7 @@ expires_at < now() - interval '30 days'
 
 清理策略应与后续 run/result/event 保留策略保持一致。
 
-### 3. Dashboard 页面级权限矩阵
+### 2. Dashboard 页面级权限矩阵
 
 后端已经落地 `admin` / `operator` / `viewer` 的路由级权限，Dashboard 还需要定义页面与控件层面的展示规则：
 
@@ -43,7 +28,7 @@ expires_at < now() - interval '30 days'
 - 未登录态直接跳 `/login`，还是允许匿名公共首页。
 - 角色提升使用 role 下拉框，还是 invite 流程。
 
-### 4. 角色语义定稿
+### 3. 角色语义定稿
 
 当前代码使用单角色模型：`admin` / `operator` / `viewer`。仍需要产品层确认：
 
@@ -54,7 +39,7 @@ expires_at < now() - interval '30 days'
 
 ## P2
 
-### 5. Graph 内协作式取消
+### 4. Graph 内协作式取消
 
 当前 `POST /runs/{run_id}/cancel` 已实现 API/状态机层取消：能标记 run 为 `cancelled`，并阻止 worker 覆盖结果。
 
@@ -72,7 +57,7 @@ expires_at < now() - interval '30 days'
 - 供应商重试策略
 - 部分进度保留和恢复语义
 
-### 6. AutoTrader reflection 逻辑对齐
+### 5. AutoTrader reflection 逻辑对齐
 
 `tradingbot/scheduler/runner.py` 的 SELL 后流程仍调用旧 reflection 接口：
 
@@ -82,13 +67,13 @@ self._graph.reflect_and_remember(realized_pnl)
 
 当前主线已经改为 persistent decision log。需要决定是移除该调用，还是改成显式写入当前 memory log / decision log 机制。
 
-### 7. CLI 与 API side effect 对齐
+### 6. CLI 与 API side effect 对齐
 
 `TradingAgentsGraph.propagate()` 会处理 memory log 和 checkpoint lifecycle。CLI 当前直接 stream `graph.graph`，没有完全复用 `propagate()` 的副作用。
 
 如果后续依赖这些副作用，需要补齐 CLI 路径，或把相关生命周期逻辑下沉到 CLI/API 共用层。
 
-### 8. Streamlit auth 生产化
+### 7. Streamlit auth 生产化
 
 `AuthService.send_sms_code()` 目前是开发 stub，只打印验证码。生产前需要接入真实短信通道，并避免在 UI 或日志中泄露验证码。
 
@@ -98,6 +83,7 @@ Dashboard cookie 写入依赖 `components.html()` 注入，调整 auth flow 时�
 
 以下历史文档里的事项已经完成，后续不再作为待办追踪：
 
+- 模型配置 live probe 已在 `POST /settings/model/validate` 落地，会用当前配置发起短超时低成本探测，并返回稳定的 `probe_status`。
 - LLM client 的未知模型 warning 已在 `BaseLLMClient.warn_if_unknown_model()` 落地，并有 `tests/test_model_validation.py` 覆盖。
 - `pyproject.toml` 已包含 `tradingbot*` package include。
 - `pytest` 已写入项目依赖。

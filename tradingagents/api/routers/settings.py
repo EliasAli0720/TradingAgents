@@ -7,8 +7,9 @@ from sqlalchemy.orm import Session
 
 from tradingagents.llm_clients.api_key_env import get_api_key_env
 from tradingagents.api.crypto import decrypt_secret
-from tradingagents.api.deps import get_current_user, get_db_session
+from tradingagents.api.deps import get_current_user, get_db_session, get_model_probe
 from tradingagents.api.model_catalog_repository import LLMModelCatalogRepository
+from tradingagents.api.model_probe import ModelProbeRequest
 from tradingagents.api.model_settings_repository import UserModelSettingsRepository
 from tradingagents.api.models import User
 from tradingagents.api.schemas import (
@@ -130,45 +131,59 @@ def delete_model_api_key(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.post("/model/validate", response_model=ModelSettingsValidationResponse)
+@router.post(
+    "/model/validate",
+    response_model=ModelSettingsValidationResponse,
+    response_model_exclude_none=True,
+)
 def validate_model_settings(
     session: Session = Depends(get_db_session),
     user: User = Depends(get_current_user),
+    probe=Depends(get_model_probe),
 ):
     settings = UserModelSettingsRepository(session).get(user.user_id)
     if settings is None:
         raise HTTPException(status_code=404, detail="model settings not configured")
 
     required_env_var = get_api_key_env(settings.llm_provider)
+    api_key_source = "none"
+    api_key = None
+    message = f"missing API key for provider {settings.llm_provider}"
+
     if settings.encrypted_api_key:
-        decrypt_secret(settings.encrypted_api_key)
+        api_key_source = "user"
+        api_key = decrypt_secret(settings.encrypted_api_key)
+        message = f"user API key configured for provider {settings.llm_provider}"
+    elif required_env_var is None:
+        api_key_source = "not_required"
+        message = f"provider {settings.llm_provider} does not require an API key"
+    elif os.environ.get(required_env_var):
+        api_key_source = "service"
+        api_key = os.environ[required_env_var]
+        message = f"service API key configured in {required_env_var}"
+    else:
         return ModelSettingsValidationResponse(
-            valid=True,
+            valid=False,
             provider=settings.llm_provider,
             required_env_var=required_env_var,
-            api_key_source="user",
-            message=f"user API key configured for provider {settings.llm_provider}",
+            api_key_source=api_key_source,
+            message=message,
         )
-    if required_env_var is None:
-        return ModelSettingsValidationResponse(
-            valid=True,
+
+    probe_result = probe(
+        ModelProbeRequest(
             provider=settings.llm_provider,
-            required_env_var=None,
-            api_key_source="not_required",
-            message=f"provider {settings.llm_provider} does not require an API key",
+            model=settings.quick_think_llm,
+            backend_url=settings.backend_url,
+            api_key=api_key,
         )
-    if os.environ.get(required_env_var):
-        return ModelSettingsValidationResponse(
-            valid=True,
-            provider=settings.llm_provider,
-            required_env_var=required_env_var,
-            api_key_source="service",
-            message=f"service API key configured in {required_env_var}",
-        )
+    )
     return ModelSettingsValidationResponse(
-        valid=False,
+        valid=probe_result.status == "success",
         provider=settings.llm_provider,
         required_env_var=required_env_var,
-        api_key_source="none",
-        message=f"missing API key for provider {settings.llm_provider}",
+        api_key_source=api_key_source,
+        message=message,
+        probe_status=probe_result.status,
+        probe_message=probe_result.message,
     )
