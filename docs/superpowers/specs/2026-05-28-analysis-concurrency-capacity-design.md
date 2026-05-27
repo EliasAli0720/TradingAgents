@@ -1,53 +1,46 @@
-# Analysis Concurrency And Capacity Design
+# 分析任务并发与容量设计
 
-Date: 2026-05-28
+日期：2026-05-28
 
-Branch: `phase/8-increase-concurrency-for-analysis-functions`
+分支：`phase/8-increase-concurrency-for-analysis-functions`
 
-## Goal
+## 目标
 
-Upgrade the analysis service from a single-worker queue into a multi-user task
-system that can safely support:
+把分析服务从单 worker 队列升级成面向多用户的任务系统，安全支持：
 
-- 5 concurrent running analysis runs per user.
-- 100 concurrent running analysis runs across the whole system.
-- Queued overflow instead of rejecting normal bursts.
-- Fair dispatch so one heavy user cannot starve other users.
-- Run-level isolation for reports, checkpoints, final state, progress, and
-  memory side effects.
-- Cooperative cancellation and worker crash recovery.
+- 单用户最多 5 个 `running` 分析任务。
+- 全系统最多 100 个 `running` 分析任务。
+- 超出容量的任务进入 `queued`，不因为正常突发直接拒绝。
+- 公平派发，避免一个重度用户饿死其他用户。
+- 每个 run 的 reports、checkpoint、final state、progress、memory 副作用完全隔离。
+- 支持协作式取消和 worker 崩溃恢复。
 
-## Non-Goals
+## 非目标
 
-- This design does not increase provider limits by itself. LLM and data vendor
-  limits still depend on account quotas and must be configured explicitly.
-- This design does not make every LangGraph node internally parallel. Run-level
-  concurrency is the priority; run-internal analyst concurrency remains a
-  separate setting.
-- This design does not rely on killing worker processes for cancellation.
-  Process termination may exist as an admin emergency action, but normal cancel
-  is cooperative.
+- 本设计不会自动提升 LLM provider 或数据供应商额度。LLM 和数据接口限制仍取决于账号配额，必须按部署环境显式配置。
+- 本设计不要求每个 LangGraph node 内部并行。优先解决 run 级并发；单个 run 内 analyst 并发仍由独立配置控制。
+- 本设计不依赖强杀 worker 进程来取消任务。强杀可以作为管理员紧急能力存在，但普通取消必须是协作式取消。
 
-## Core Decision
+## 核心决策
 
-`POST /runs` must only create a queued run. It must not enqueue Celery directly.
+`POST /runs` 只负责创建 `queued` run，不再直接投递 Celery 任务。
 
-A dedicated dispatcher owns the transition from `queued` to executable work:
+新增独立 dispatcher，统一负责从 `queued` 到可执行任务的状态转换：
 
 ```text
 POST /runs
   -> analysis_runs(status=queued)
-  -> dispatcher checks capacity and fairness
+  -> dispatcher 检查容量和公平性
   -> status=dispatching
   -> enqueue Celery task
-  -> worker sets status=running
+  -> worker 设置 status=running
 ```
 
-This is the key change that makes per-user and global capacity enforceable.
+这是能可靠执行“单用户 5 个、全系统 100 个”容量规则的关键变化。
 
-## Target Capacity
+## 目标容量
 
-Configuration defaults:
+默认配置：
 
 ```env
 TRADINGAGENTS_MAX_RUNNING_SYSTEM=100
@@ -61,11 +54,9 @@ TRADINGAGENTS_WORKER_CONCURRENCY=10
 TRADINGAGENTS_WORKER_REPLICAS=10
 ```
 
-The system-level target of 100 running analyses is reached by horizontal worker
-capacity, for example 10 worker replicas with concurrency 10. Smaller
-deployments can keep the same logic but run fewer workers.
+全系统 100 个 running 分析通过横向 worker 容量实现。例如 10 个 worker 副本，每个 worker `concurrency=10`。小规模部署可以保留同一套逻辑，但减少 worker 数量和 `MAX_RUNNING_SYSTEM`。
 
-## State Machine
+## 状态机
 
 ```text
 queued
@@ -78,7 +69,7 @@ queued
 
 dispatching
   -> running
-  -> queued      # enqueue failed or dispatch lease expired
+  -> queued      # enqueue 失败或 dispatch lease 过期
   -> cancelled
 
 running
@@ -88,23 +79,22 @@ running
   -> succeeded
 
 running
-  -> queued      # retryable worker loss before max attempts
+  -> queued      # worker 丢失且未超过最大重试次数
 ```
 
-State meanings:
+状态含义：
 
-- `queued`: accepted and waiting for capacity.
-- `dispatching`: capacity lease acquired; dispatcher is enqueueing work.
-- `running`: worker has started and is heartbeating.
-- `cancelling`: user requested cancellation while worker may still be inside a
-  graph node or provider call.
-- `cancelled`: cancellation completed; no result should be written.
-- `succeeded`: final result and artifacts are available.
-- `failed`: terminal failure after non-retryable error or exhausted retries.
+- `queued`：任务已接受，正在等待容量。
+- `dispatching`：已经获取容量 lease，dispatcher 正在投递任务。
+- `running`：worker 已开始执行，并持续 heartbeat。
+- `cancelling`：用户已请求取消，但 worker 可能仍在某个 graph node 或 provider 调用中。
+- `cancelled`：取消完成，不应写入 result。
+- `succeeded`：最终结果和 artifacts 可用。
+- `failed`：不可重试错误或重试耗尽后的终态失败。
 
-## Database Changes
+## 数据库变更
 
-Extend `analysis_runs`:
+扩展 `analysis_runs`：
 
 ```text
 priority integer not null default 0
@@ -118,7 +108,7 @@ lease_expires_at timestamptz null
 updated_at timestamptz not null
 ```
 
-Add `analysis_run_artifacts`:
+新增 `analysis_run_artifacts`：
 
 ```text
 artifact_id text primary key
@@ -132,7 +122,7 @@ sha256 text not null
 created_at timestamptz not null
 ```
 
-Add `analysis_memory_entries`:
+新增 `analysis_memory_entries`：
 
 ```text
 id bigserial primary key
@@ -151,7 +141,7 @@ created_at timestamptz not null
 resolved_at timestamptz null
 ```
 
-Indexes:
+索引：
 
 ```text
 analysis_runs(status, priority desc, created_at)
@@ -161,11 +151,11 @@ analysis_run_artifacts(run_id, kind)
 analysis_memory_entries(user_id, ticker, pending, created_at desc)
 ```
 
-## Capacity Enforcement
+## 容量控制
 
-Capacity is enforced at dispatch time, not at run creation time.
+容量在 dispatch 阶段控制，而不是在创建 run 时控制。
 
-Creation rule:
+创建规则：
 
 ```text
 if user queued + dispatching + running >= MAX_QUEUED_PER_USER + MAX_RUNNING_PER_USER:
@@ -174,7 +164,7 @@ else:
   create queued run
 ```
 
-Dispatch rule:
+派发规则：
 
 ```text
 if system running + dispatching >= MAX_RUNNING_SYSTEM:
@@ -187,23 +177,21 @@ else:
   acquire dispatch lease and enqueue
 ```
 
-`dispatching` counts against capacity because a task has already been selected
-and may start at any moment.
+`dispatching` 计入容量，因为任务已经被选中，随时可能进入执行。
 
-## Fair Dispatcher
+## 公平 Dispatcher
 
-The dispatcher runs every `TRADINGAGENTS_DISPATCH_INTERVAL_SECONDS`.
+dispatcher 每 `TRADINGAGENTS_DISPATCH_INTERVAL_SECONDS` 运行一次。
 
-It must avoid strict FIFO across all runs because one user can submit many runs
-and starve later users. The dispatcher uses user-round-robin:
+不能对所有 run 做严格 FIFO，因为一个用户可以先提交大量任务，让后来的其他用户长期排不到。dispatcher 采用按用户轮询的公平策略：
 
 ```text
-1. select users with queued runs ordered by oldest queued run
-2. for each user, dispatch at most one run per dispatcher pass
-3. repeat on the next pass while global capacity remains
+1. 选择拥有 queued run 的用户，按该用户最早 queued run 排序
+2. 每轮每个用户最多派发 1 个 run
+3. 下一轮继续派发，直到全局容量耗尽
 ```
 
-PostgreSQL selection must use row locks:
+PostgreSQL 选择任务时必须使用行锁：
 
 ```sql
 SELECT ...
@@ -213,12 +201,11 @@ ORDER BY priority DESC, created_at ASC
 FOR UPDATE SKIP LOCKED
 ```
 
-Multiple dispatcher instances are allowed, but one instance is enough for the
-initial deployment. `SKIP LOCKED` keeps behavior safe if more are added.
+初始部署一个 dispatcher 实例即可。后续即使部署多个 dispatcher，`SKIP LOCKED` 也能避免多个实例抢同一个 run。
 
-## Celery Worker Configuration
+## Celery Worker 配置
 
-Celery configuration:
+Celery 配置：
 
 ```python
 worker_prefetch_multiplier = 1
@@ -228,7 +215,7 @@ task_time_limit = 3600
 task_soft_time_limit = 3300
 ```
 
-Worker command:
+worker 启动命令：
 
 ```bash
 celery -A tradingagents.worker.celery_app worker \
@@ -236,26 +223,25 @@ celery -A tradingagents.worker.celery_app worker \
   --concurrency="${TRADINGAGENTS_WORKER_CONCURRENCY:-10}"
 ```
 
-`worker_prefetch_multiplier=1` is required. Without it, a worker can reserve too
-many long-running runs and make queue latency unfair.
+`worker_prefetch_multiplier=1` 是必需项。否则某个 worker 会预取过多长任务，造成队列延迟和用户公平性变差。
 
-## Worker Execution Contract
+## Worker 执行契约
 
-Worker flow:
+worker 执行流程：
 
 ```text
-1. load run by run_id
-2. verify status is dispatching or running
-3. set status=running, started_at if missing, heartbeat_at=now
-4. start heartbeat loop
-5. create RunContext
-6. run graph with cancellation token and provider limiter
-7. write artifacts, result, memory entry
-8. set status=succeeded
-9. emit run_succeeded
+1. 按 run_id 加载 run
+2. 确认 status 是 dispatching 或 running
+3. 设置 status=running；如果 started_at 为空则写入 started_at；写 heartbeat_at=now
+4. 启动 heartbeat loop
+5. 创建 RunContext
+6. 使用 cancellation token 和 provider limiter 执行 graph
+7. 写 artifacts、result、memory entry
+8. 设置 status=succeeded
+9. 发出 run_succeeded 事件
 ```
 
-Failure flow:
+失败流程：
 
 ```text
 retryable provider/network error:
@@ -275,12 +261,11 @@ AnalysisCancelled:
   cleanup checkpoint
 ```
 
-The worker must update `heartbeat_at` every
-`TRADINGAGENTS_WORKER_HEARTBEAT_SECONDS` while the task is active.
+worker 在任务 active 期间必须每 `TRADINGAGENTS_WORKER_HEARTBEAT_SECONDS` 更新一次 `heartbeat_at`。
 
 ## Sweeper
 
-The sweeper runs periodically and repairs stale runs:
+sweeper 周期性运行，用来修复卡住的 run：
 
 ```text
 dispatching where lease_expires_at < now:
@@ -294,12 +279,11 @@ running/cancelling where heartbeat_at < now - STALE_AFTER:
     status=failed or cancelled
 ```
 
-The sweeper emits `run_requeued`, `run_failed`, or `run_cancelled` events so the
-UI sees a consistent state transition.
+sweeper 需要发出 `run_requeued`、`run_failed` 或 `run_cancelled` 事件，让 UI 看到一致的状态变化。
 
 ## RunContext
 
-Graph execution receives a single context object:
+graph 执行时接收一个统一上下文对象：
 
 ```text
 RunContext
@@ -315,14 +299,13 @@ RunContext
 - checkpoint_namespace
 ```
 
-All side effects must use this context. Graph code must not write to shared
-global report, checkpoint, result, or memory paths.
+所有副作用都必须通过 `RunContext` 完成。graph 代码不能再写共享的全局 report、checkpoint、result 或 memory 路径。
 
-## Artifact Isolation
+## Artifact 隔离
 
-All artifacts are keyed by `run_id`.
+所有 artifacts 都以 `run_id` 作为隔离键。
 
-Local storage layout:
+本地存储布局：
 
 ```text
 artifacts/
@@ -339,30 +322,28 @@ artifacts/
       graph.sqlite
 ```
 
-Report paths may include ticker/date for readability, but uniqueness must come
-from `run_id`, not timestamp or ticker.
+report 路径可以带 ticker/date 方便阅读，但唯一性必须来自 `run_id`，不能依赖 timestamp 或 ticker。
 
-`analysis_run_artifacts` stores metadata for every persisted artifact. API
-responses should serve artifacts by `artifact_id`, scoped by run ownership.
+`analysis_run_artifacts` 保存每个持久化 artifact 的元数据。API 按 `artifact_id` 提供下载，并且必须按 run ownership 做权限限制。
 
-## Checkpoints
+## Checkpoint
 
-Checkpoint namespace changes from ticker/date to run_id:
+checkpoint namespace 从 ticker/date 改为 run_id：
 
 ```text
 thread_id = run_id
 checkpoint_db = artifacts/run_id/checkpoints/graph.sqlite
 ```
 
-This prevents same ticker and same date runs from sharing state.
+这样同 ticker、同日期的并发 run 不会共享状态。
 
-On cancellation:
+取消时：
 
 ```text
 delete artifacts/run_id/checkpoints/
 ```
 
-On success:
+成功时：
 
 ```text
 delete checkpoint rows or remove checkpoint artifact
@@ -370,9 +351,9 @@ delete checkpoint rows or remove checkpoint artifact
 
 ## DB Memory Store
 
-The markdown memory file is replaced by `analysis_memory_entries`.
+用 `analysis_memory_entries` 替换 markdown memory 文件。
 
-Past context query:
+同 ticker 历史上下文查询：
 
 ```sql
 SELECT *
@@ -384,7 +365,7 @@ ORDER BY created_at DESC
 LIMIT 5;
 ```
 
-Cross-ticker lessons:
+跨 ticker lessons 查询：
 
 ```sql
 SELECT *
@@ -396,7 +377,7 @@ ORDER BY created_at DESC
 LIMIT 3;
 ```
 
-Pending reflection resolution must lock rows:
+pending reflection 解析必须锁行：
 
 ```sql
 SELECT *
@@ -407,14 +388,13 @@ WHERE user_id = :user_id
 FOR UPDATE SKIP LOCKED;
 ```
 
-This prevents two concurrent same-ticker runs from resolving the same pending
-memory entry twice.
+这样两个同 ticker 并发 run 不会重复解析同一个 pending memory entry。
 
-## Provider Limits
+## Provider 限流
 
-System run concurrency does not equal provider call concurrency.
+系统 run 并发不等于 provider 调用并发。
 
-Redis limiters protect provider calls:
+Redis limiter 负责保护 provider 调用：
 
 ```text
 llm:{provider}:concurrent
@@ -425,17 +405,13 @@ data:{vendor}:requests_per_minute
 user:{user_id}:llm_concurrent
 ```
 
-Before an LLM or data vendor call, execution acquires a limiter permit. If no
-permit is available, the call waits up to a configured timeout. If the timeout
-expires, the run records a retryable provider-capacity error and may return to
-`queued`.
+每次 LLM 或数据供应商调用前，执行逻辑必须先获取 limiter permit。如果没有可用 permit，调用等待到配置的超时时间。超时后，run 记录 retryable provider-capacity error，并可回到 `queued` 重试。
 
-This allows 100 runs to be `running` without allowing 100 or more provider calls
-to hit the same vendor at once.
+这允许系统有 100 个 `running` run，但不会让 100 个以上 provider 调用同时打到同一个供应商。
 
-## Cooperative Cancellation
+## 协作式取消
 
-Cancel API behavior:
+取消 API 行为：
 
 ```text
 queued      -> cancelled
@@ -443,32 +419,30 @@ dispatching -> cancelling
 running     -> cancelling
 ```
 
-It also writes a Redis flag:
+同时写 Redis flag：
 
 ```text
 cancel:{run_id}=1
 ```
 
-The graph checks `CancellationToken.raise_if_cancelled()`:
+graph 检查 `CancellationToken.raise_if_cancelled()` 的位置：
 
-- before graph start
-- before each LangGraph node
-- after each LangGraph node
-- before each tool call
-- before each LLM call
-- before saving artifacts
-- before writing result
-- before writing memory
+- graph 开始前
+- 每个 LangGraph node 前
+- 每个 LangGraph node 后
+- 每次 tool call 前
+- 每次 LLM call 前
+- 保存 artifacts 前
+- 写 result 前
+- 写 memory 前
 
-`AnalysisCancelled` is not a failure. Worker catches it and marks the run
-`cancelled`.
+`AnalysisCancelled` 不是失败。worker 捕获后把 run 标记为 `cancelled`。
 
-LLM HTTP calls cannot always be interrupted mid-request, so provider clients
-must have explicit timeouts.
+LLM HTTP 调用不一定能在请求中途被打断，所以 provider client 必须设置明确 timeout。
 
-## Progress Events
+## 进度事件
 
-The event model should expose user-readable phases:
+事件模型需要暴露用户可读的阶段：
 
 ```text
 run_queued
@@ -482,7 +456,7 @@ run_succeeded
 run_requeued
 ```
 
-`run_progress` payload:
+`run_progress` payload：
 
 ```json
 {
@@ -493,7 +467,7 @@ run_requeued
 }
 ```
 
-Required phases:
+必需阶段：
 
 ```text
 memory_resolving
@@ -509,13 +483,11 @@ saving_artifacts
 completed
 ```
 
-## SSE Scaling
+## SSE 扩展
 
-The current polling-based SSE stream is acceptable for low volume, but for 100
-running runs and many viewers it should not query PostgreSQL once per second per
-connection.
+当前基于轮询的 SSE stream 在低容量下可用，但 100 个 running run 和大量观看连接下，不应该让每个连接每秒查询 PostgreSQL。
 
-Target implementation:
+目标实现：
 
 ```text
 worker writes event to DB
@@ -524,12 +496,11 @@ SSE endpoint streams Redis pub/sub messages
 on reconnect, API replays missed DB events by last event id
 ```
 
-This keeps PostgreSQL as the durable event store and Redis as the live fanout
-path.
+PostgreSQL 保持 durable event store，Redis 只负责 live fanout。
 
-## API Changes
+## API 变化
 
-`POST /runs` response:
+`POST /runs` 响应：
 
 ```json
 {
@@ -539,7 +510,7 @@ path.
 }
 ```
 
-When user backlog is too large:
+当用户 backlog 过大时：
 
 ```http
 429 Too Many Requests
@@ -551,7 +522,7 @@ When user backlog is too large:
 }
 ```
 
-New endpoints:
+新增端点：
 
 ```text
 GET /runs/{run_id}/artifacts
@@ -559,7 +530,7 @@ GET /runs/{run_id}/artifacts/{artifact_id}
 GET /admin/capacity
 ```
 
-`GET /admin/capacity`:
+`GET /admin/capacity`：
 
 ```json
 {
@@ -576,9 +547,9 @@ GET /admin/capacity
 }
 ```
 
-## Deployment Shape
+## 部署形态
 
-Small deployment:
+小规模部署：
 
 ```text
 api replicas: 1
@@ -589,7 +560,7 @@ effective worker capacity: 10
 max_running_system: 10
 ```
 
-Target deployment:
+目标部署：
 
 ```text
 api replicas: 2
@@ -600,52 +571,44 @@ effective worker capacity: 100
 max_running_system: 100
 ```
 
-Redis and PostgreSQL must be managed services or provisioned with enough
-connections and memory for the target capacity.
+Redis 和 PostgreSQL 应使用托管服务，或至少按目标容量预留足够连接数、内存和磁盘 I/O。
 
-## Testing Requirements
+## 测试要求
 
-Automated tests must cover:
+自动化测试必须覆盖：
 
-- A user can create runs beyond the running limit and they remain queued.
-- Dispatcher starts at most 5 runs for a single user.
-- Dispatcher starts at most 100 runs globally.
-- Dispatcher is fair across users.
-- Same ticker and same date can run concurrently without artifact, checkpoint,
-  or result collisions.
-- Running cancellation transitions to `cancelling` then `cancelled`.
-- Cancelled runs do not write result or memory entries.
-- Stale `dispatching` runs return to `queued`.
-- Stale `running` runs are requeued or failed according to attempt count.
-- Provider limiter delays or requeues work instead of letting provider calls
-  stampede.
-- SSE streams replay missed events and live-stream Redis events without mixing
-  run ids.
-- DB memory pending resolution is not duplicated by concurrent same-ticker runs.
+- 用户可以创建超过 running limit 的 run，超出的 run 保持 queued。
+- dispatcher 对单用户最多启动 5 个 run。
+- dispatcher 对全系统最多启动 100 个 run。
+- dispatcher 对多个用户公平派发。
+- 同 ticker、同日期可以并发运行，不发生 artifact、checkpoint 或 result 覆盖。
+- running 中取消会从 `cancelling` 进入 `cancelled`。
+- cancelled run 不写 result，也不写 memory entry。
+- 卡住的 `dispatching` run 会回到 `queued`。
+- 卡住的 `running` run 会按 attempt count 重排或失败。
+- provider limiter 会延迟或重排工作，不让 provider 调用形成 stampede。
+- SSE 能 replay missed events，并通过 Redis live stream 发送事件，不串 run id。
+- DB memory pending resolution 在同 ticker 并发 run 下不会重复处理。
 
-## Migration Plan
+## 迁移计划
 
-1. Add schema fields and new tables.
-2. Add capacity config and repository methods.
-3. Change `POST /runs` to create queued runs only.
-4. Add dispatcher and tests for per-user/global capacity.
-5. Add worker heartbeat and sweeper.
-6. Add run_id artifact store and migrate report/final-state writes.
-7. Replace markdown memory with DB memory store.
-8. Change checkpoint namespace to run_id.
-9. Add provider limiter.
-10. Add cooperative cancellation checks.
-11. Switch SSE live delivery to Redis pub/sub with DB replay.
-12. Update frontend queue position, progress, cancellation, and artifacts views.
+1. 增加 schema 字段和新表。
+2. 增加 capacity config 和 repository 方法。
+3. 把 `POST /runs` 改成只创建 queued run。
+4. 增加 dispatcher，并测试单用户/全局容量。
+5. 增加 worker heartbeat 和 sweeper。
+6. 增加 run_id artifact store，并迁移 report/final-state 写入。
+7. 用 DB memory store 替换 markdown memory。
+8. 把 checkpoint namespace 改成 run_id。
+9. 增加 provider limiter。
+10. 增加协作式取消检查。
+11. 把 SSE live delivery 切换到 Redis pub/sub + DB replay。
+12. 更新前端队列位置、进度、取消和 artifacts 视图。
 
-Each step should be independently tested and committed.
+每一步都必须独立测试并提交。
 
-## Open Operational Assumptions
+## 运行假设
 
-- Provider quotas must be configured per deployment. The application enforces
-  configured limits but cannot infer account-level RPM/TPM accurately.
-- 100 running analyses requires enough worker CPU, memory, Redis capacity,
-  PostgreSQL connections, and provider quota. If any layer is lower, the
-  dispatcher limit must be set lower.
-- `MAX_RUNNING_SYSTEM` should not exceed effective worker capacity by a large
-  margin, or many runs will appear running while waiting inside workers.
+- provider quota 必须按部署环境配置。应用负责执行配置好的限流，但不能准确自动推断账号级 RPM/TPM。
+- 100 个 running analyses 需要足够的 worker CPU、内存、Redis 容量、PostgreSQL 连接数和 provider quota。任一层容量更低时，dispatcher limit 必须相应调低。
+- `MAX_RUNNING_SYSTEM` 不应明显超过有效 worker capacity，否则大量 run 会显示为 running，但实际只是在 worker 内等待。
