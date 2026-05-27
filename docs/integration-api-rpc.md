@@ -272,7 +272,7 @@ POST /settings/validate
 
 当前实现中的 `POST /settings/model/validate` 只校验当前用户模型配置是否具备可用密钥来源：用户加密密钥、服务端统一环境变量，或 provider 不需要密钥。它不会真实请求模型供应商。
 
-后续 TODO：
+后续事项：
 
 - 新增模型 live probe：使用当前配置初始化 LLM client，发送短超时、低成本请求，例如要求返回固定字符串 `pong`。
 - live probe 需要区分 key 无效、模型不存在、endpoint 不通、权限不足、超时和供应商错误。
