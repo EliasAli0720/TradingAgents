@@ -122,12 +122,13 @@ def test_post_runs_creates_run_and_enqueues_task():
     body = response.json()
     assert body["status"] == "queued"
     assert body["run_id"].startswith("run_")
-    assert task_ids == [body["run_id"]]
+    assert body["queue_position"] >= 1
+    assert task_ids == []
 
     with Session() as session:
         run = AnalysisRunRepository(session).get_run(body["run_id"])
         assert run.ticker == "NVDA"
-        assert run.celery_task_id == "celery-test-id"
+        assert run.celery_task_id is None
         assert run.llm_config == {
             "llm_provider": "openai",
             "deep_think_llm": "gpt-5.4",
@@ -135,6 +136,32 @@ def test_post_runs_creates_run_and_enqueues_task():
             "backend_url": None,
             "api_key_encrypted": None,
         }
+
+
+def test_create_run_only_queues_and_does_not_enqueue_celery():
+    calls = []
+
+    def enqueue(run_id: str) -> str:
+        calls.append(run_id)
+        return "celery-test-id"
+
+    client, _Session = _client_with_enqueue(enqueue)
+
+    response = client.post(
+        "/runs",
+        json={
+            "ticker": "nvda",
+            "trade_date": "2026-01-15",
+            "asset_type": "stock",
+            "analysts": ["market"],
+        },
+    )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["status"] == "queued"
+    assert body["queue_position"] >= 1
+    assert calls == []
 
 
 def test_get_run_returns_status():
@@ -148,6 +175,21 @@ def test_get_run_returns_status():
     response = client.get(f"/runs/{run_id}")
     assert response.status_code == 200
     assert response.json()["ticker"] == "NVDA"
+
+
+def test_get_run_returns_dispatching_status():
+    client, Session, _ = _client()
+    with Session() as session:
+        repo = AnalysisRunRepository(session)
+        run = repo.create_run("NVDA", date(2026, 1, 15), "stock", ["market"])
+        run.status = "dispatching"
+        run_id = run.run_id
+        session.commit()
+
+    response = client.get(f"/runs/{run_id}")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "dispatching"
 
 
 def test_result_before_completion_returns_409():
@@ -182,15 +224,9 @@ def test_result_after_completion_returns_payload():
     assert response.json()["decision"] == "Hold"
 
 
-def test_post_runs_commits_run_before_enqueue():
-    observed = {}
-
-    def enqueue(run_id: str) -> str:
-        with Session() as session:
-            observed["status"] = AnalysisRunRepository(session).get_run(run_id).status
-        return "celery-test-id"
-
-    client, Session = _client_with_enqueue(enqueue)
+def test_post_runs_commits_queued_run_without_enqueue():
+    calls = []
+    client, Session = _client_with_enqueue(calls.append)
 
     response = client.post(
         "/runs",
@@ -203,34 +239,13 @@ def test_post_runs_commits_run_before_enqueue():
     )
 
     assert response.status_code == 202
-    assert observed["status"] == "queued"
-
-
-def test_post_runs_enqueue_failure_marks_run_failed():
-    def enqueue(_run_id: str) -> str:
-        raise RuntimeError("redis unavailable")
-
-    client, Session = _client_with_enqueue(enqueue)
-
-    response = client.post(
-        "/runs",
-        json={
-            "ticker": "nvda",
-            "trade_date": "2026-01-15",
-            "asset_type": "stock",
-            "analysts": ["market"],
-        },
-    )
-
-    assert response.status_code == 503
     body = response.json()
-    assert body["detail"]["run_id"].startswith("run_")
-    assert body["detail"]["error"] == "redis unavailable"
+    assert calls == []
     with Session() as session:
         run = session.query(AnalysisRun).one()
-        assert run.status == "failed"
-        assert run.error == "redis unavailable"
-        assert body["detail"]["run_id"] == run.run_id
+        assert run.status == "queued"
+        assert run.celery_task_id is None
+        assert body["run_id"] == run.run_id
 
 
 def test_post_cancel_queued_run_marks_cancelled_and_revokes_task():

@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 from typing import Any, Optional
 from uuid import uuid4
 
-from sqlalchemy import select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from tradingagents.api.models import AnalysisRun, AnalysisRunEvent, AnalysisRunResult
@@ -65,6 +65,35 @@ class AnalysisRunRepository:
     def set_celery_task_id(self, run_id: str, task_id: str) -> None:
         run = self.require_run(run_id)
         run.celery_task_id = task_id
+
+    def queue_position(self, run_id: str) -> Optional[int]:
+        run = self.get_run(run_id)
+        if run is None or run.status != "queued":
+            return None
+
+        stmt = (
+            select(func.count())
+            .select_from(AnalysisRun)
+            .where(
+                AnalysisRun.status == "queued",
+                or_(
+                    AnalysisRun.priority > run.priority,
+                    and_(
+                        AnalysisRun.priority == run.priority,
+                        AnalysisRun.created_at < run.created_at,
+                    ),
+                    and_(
+                        AnalysisRun.priority == run.priority,
+                        AnalysisRun.created_at == run.created_at,
+                        AnalysisRun.run_id <= run.run_id,
+                    ),
+                ),
+            )
+        )
+        if self.user_id is not None:
+            stmt = stmt.where(AnalysisRun.user_id == self.user_id)
+
+        return int(self.session.scalar(stmt) or 0)
 
     def require_run(self, run_id: str) -> AnalysisRun:
         run = self.get_run(run_id)

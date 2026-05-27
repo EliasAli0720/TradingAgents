@@ -7,7 +7,7 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
-RunStatus = Literal["queued", "running", "succeeded", "failed", "cancelled"]
+RunStatus = Literal["queued", "dispatching", "running", "succeeded", "failed", "cancelled"]
 AssetType = Literal["stock", "crypto"]
 AnalystKey = Literal["market", "social", "news", "fundamentals"]
 
@@ -56,6 +56,7 @@ class CreateRunRequest(BaseModel):
 class CreateRunResponse(BaseModel):
     run_id: str
     status: RunStatus
+    queue_position: int | None = None
 
 
 class CancelRunResponse(BaseModel):

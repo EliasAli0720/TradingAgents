@@ -5,15 +5,17 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from tradingagents.api.capacity import CapacityConfig, capacity_snapshot
+from tradingagents.api.config import get_api_settings
 from tradingagents.api.model_settings_repository import UserModelSettingsRepository
 from tradingagents.api.deps import (
     get_current_user,
     get_db_session,
     get_scoped_repository,
     get_stream_session_factory,
-    get_task_enqueue,
     get_task_revoke,
     require_role,
 )
@@ -31,16 +33,40 @@ from tradingagents.api.schemas import (
 router = APIRouter(prefix="/runs", tags=["runs"])
 
 
+def _user_capacity_lock_stmt(user_id: str):
+    return select(User.user_id).where(User.user_id == user_id).with_for_update()
+
+
+def _lock_user_for_capacity(session: Session, user_id: str) -> None:
+    session.execute(_user_capacity_lock_stmt(user_id)).scalar_one()
+
+
 @router.post("", response_model=CreateRunResponse, status_code=status.HTTP_202_ACCEPTED)
 def create_run(
     request: CreateRunRequest,
     session: Session = Depends(get_db_session),
-    enqueue=Depends(get_task_enqueue),
     user: User = Depends(require_role("admin", "operator")),
 ):
     llm_config = UserModelSettingsRepository(session).snapshot(user.user_id)
     if llm_config is None:
         raise HTTPException(status_code=409, detail="model settings not configured")
+
+    settings = get_api_settings()
+    _lock_user_for_capacity(session, user.user_id)
+    capacity = capacity_snapshot(
+        session,
+        user.user_id,
+        CapacityConfig(
+            system_running=settings.max_running_system,
+            user_running=settings.max_running_per_user,
+            user_backlog=settings.max_queued_per_user,
+        ),
+    )
+    if not capacity.can_create:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="too many queued analysis runs",
+        )
 
     repo = AnalysisRunRepository(session, user_id=user.user_id)
     run = repo.create_run(
@@ -52,18 +78,11 @@ def create_run(
         llm_config=llm_config,
     )
     session.commit()
-    try:
-        task_id = enqueue(run.run_id)
-    except Exception as exc:
-        repo.store_failure(run.run_id, str(exc))
-        session.commit()
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={"run_id": run.run_id, "error": str(exc)},
-        ) from exc
-    repo.set_celery_task_id(run.run_id, task_id)
-    session.commit()
-    return CreateRunResponse(run_id=run.run_id, status="queued")
+    return CreateRunResponse(
+        run_id=run.run_id,
+        status="queued",
+        queue_position=repo.queue_position(run.run_id),
+    )
 
 
 @router.post("/{run_id}/cancel", response_model=CancelRunResponse)
