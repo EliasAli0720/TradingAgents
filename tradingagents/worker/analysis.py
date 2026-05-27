@@ -8,6 +8,7 @@ from tradingagents.api.crypto import decrypt_secret
 from tradingagents.api.serialization import extract_reports, json_safe_state
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph.trading_graph import TradingAgentsGraph
+from tradingagents.reports import save_analysis_report
 
 
 def run_tradingagents_analysis(
@@ -34,6 +35,7 @@ def run_tradingagents_analysis(
         trade_date.isoformat(),
         asset_type=asset_type,
     )
+    save_analysis_report(final_state, ticker, config["reports_dir"])
     return {
         "decision": decision,
         "reports": extract_reports(final_state),

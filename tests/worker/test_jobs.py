@@ -209,8 +209,13 @@ def test_celery_app_registers_analysis_task():
     assert result.returncode == 0, result.stderr
 
 
-def test_run_tradingagents_analysis_decrypts_user_api_key_snapshot(monkeypatch):
+def test_run_tradingagents_analysis_decrypts_user_api_key_snapshot(monkeypatch, tmp_path):
     monkeypatch.setenv("MODEL_API_KEY_ENCRYPTION_KEY", FERNET_KEY)
+    monkeypatch.setitem(
+        sys.modules["tradingagents.worker.analysis"].DEFAULT_CONFIG,
+        "reports_dir",
+        str(tmp_path / "reports"),
+    )
     captured_configs = []
 
     class FakeGraph:
@@ -237,6 +242,65 @@ def test_run_tradingagents_analysis_decrypts_user_api_key_snapshot(monkeypatch):
     assert output["decision"] == "Hold"
     assert captured_configs[0][0] == ["market"]
     assert captured_configs[0][1]["api_key"] == "sk-user-abcdef123456"
+
+
+def test_run_tradingagents_analysis_writes_markdown_report(monkeypatch, tmp_path):
+    reports_dir = tmp_path / "reports"
+    monkeypatch.setitem(
+        sys.modules["tradingagents.worker.analysis"].DEFAULT_CONFIG,
+        "reports_dir",
+        str(reports_dir),
+    )
+
+    class FakeGraph:
+        def __init__(self, selected_analysts, config):
+            pass
+
+        def propagate(self, ticker, trade_date, asset_type):
+            return (
+                {
+                    "market_report": "market body",
+                    "sentiment_report": "sentiment body",
+                    "news_report": "news body",
+                    "fundamentals_report": "fundamentals body",
+                    "investment_plan": "investment plan body",
+                    "investment_debate_state": {
+                        "bull_history": "bull body",
+                        "bear_history": "bear body",
+                        "judge_decision": "research manager body",
+                    },
+                    "trader_investment_plan": "trader body",
+                    "risk_debate_state": {
+                        "aggressive_history": "aggressive body",
+                        "conservative_history": "conservative body",
+                        "neutral_history": "neutral body",
+                        "judge_decision": "portfolio body",
+                    },
+                    "final_trade_decision": "portfolio body",
+                },
+                "Hold",
+            )
+
+    monkeypatch.setattr("tradingagents.worker.analysis.TradingAgentsGraph", FakeGraph)
+
+    output = run_tradingagents_analysis(
+        "NVDA",
+        date(2026, 1, 15),
+        "stock",
+        ["market"],
+        LLM_CONFIG,
+    )
+
+    run_dirs = list(reports_dir.glob("NVDA_*"))
+    assert output["decision"] == "Hold"
+    assert len(run_dirs) == 1
+    assert (run_dirs[0] / "complete_report.md").read_text(encoding="utf-8").startswith(
+        "# Trading Analysis Report: NVDA"
+    )
+    assert (run_dirs[0] / "1_analysts" / "market.md").read_text(encoding="utf-8") == "market body"
+    assert (run_dirs[0] / "2_research" / "manager.md").read_text(encoding="utf-8") == "research manager body"
+    assert (run_dirs[0] / "3_trading" / "trader.md").read_text(encoding="utf-8") == "trader body"
+    assert (run_dirs[0] / "5_portfolio" / "decision.md").read_text(encoding="utf-8") == "portfolio body"
 
 
 def test_trading_graph_provider_kwargs_include_snapshot_api_key():
