@@ -1,5 +1,11 @@
 # TradingAgents 集成与 API/RPC 服务设计
 
+并发容量升级设计见
+[`docs/superpowers/specs/2026-05-28-analysis-concurrency-capacity-design.md`](superpowers/specs/2026-05-28-analysis-concurrency-capacity-design.md)。
+该设计覆盖单用户最多 5 个 running run、系统最多 100 个 running run、
+dispatcher 公平派发、run_id artifact 隔离、DB memory、provider 限流、
+heartbeat/sweeper 和协作式取消。
+
 ## 目的
 
 本文档说明如何把当前 TradingAgents 项目集成到另一个系统中，作为可复用的分析能力使用。
