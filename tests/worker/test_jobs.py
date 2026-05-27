@@ -108,8 +108,48 @@ def test_execute_analysis_run_success_writes_result():
     assert [event.event_type for event in repo.list_events(run.run_id)] == [
         "run_queued",
         "run_started",
+        "run_progress",
+        "run_progress",
+        "run_progress",
         "run_succeeded",
     ]
+
+
+def test_execute_analysis_run_emits_user_friendly_progress_events():
+    session, repo = _repo()
+    run = repo.create_run(
+        "NVDA", date(2026, 1, 15), "stock", ["market"], llm_config=LLM_CONFIG
+    )
+    session.commit()
+
+    def fake_executor(ticker, trade_date, asset_type, analysts, llm_config):
+        return {
+            "decision": "Hold",
+            "reports": {"final_trade_decision": "Rating: Hold"},
+            "final_state": {"company_of_interest": ticker},
+        }
+
+    execute_analysis_run(repo, run.run_id, fake_executor)
+    session.commit()
+
+    events = repo.list_events(run.run_id)
+    progress_events = [event for event in events if event.event_type == "run_progress"]
+    assert [event.payload["phase"] for event in progress_events] == [
+        "preparing",
+        "analyzing",
+        "saving",
+    ]
+    assert [event.payload["percent"] for event in progress_events] == [15, 35, 85]
+    assert all(event.payload["message"] for event in progress_events)
+    assert [event.event_type for event in events] == [
+        "run_queued",
+        "run_started",
+        "run_progress",
+        "run_progress",
+        "run_progress",
+        "run_succeeded",
+    ]
+    assert repo.get_run(run.run_id).current_step == "Completed"
 
 
 def test_execute_analysis_run_failure_writes_error():
@@ -188,6 +228,8 @@ def test_execute_analysis_run_does_not_overwrite_cancelled_run_after_executor_re
     assert [event.event_type for event in repo.list_events(run.run_id)] == [
         "run_queued",
         "run_started",
+        "run_progress",
+        "run_progress",
         "run_cancelled",
     ]
 

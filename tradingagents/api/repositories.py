@@ -100,6 +100,32 @@ class AnalysisRunRepository:
         self.add_event(run_id, "run_started", {"run_id": run_id, "status": "running"})
         return self.require_run(run_id)
 
+    def record_progress(
+        self,
+        run_id: str,
+        *,
+        phase: str,
+        step: str,
+        percent: int,
+        message: str,
+    ) -> AnalysisRun:
+        run = self.require_run(run_id)
+        if run.status not in {"queued", "running"}:
+            return run
+        run.current_step = step
+        self.add_event(
+            run_id,
+            "run_progress",
+            {
+                "run_id": run_id,
+                "phase": phase,
+                "step": step,
+                "percent": percent,
+                "message": message,
+            },
+        )
+        return run
+
     def store_success(
         self,
         run_id: str,

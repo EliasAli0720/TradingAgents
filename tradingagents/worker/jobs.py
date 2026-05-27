@@ -26,6 +26,22 @@ def execute_analysis_run(
         repo.session.commit()
         if run.llm_config is None:
             raise RuntimeError("model settings snapshot missing")
+        repo.record_progress(
+            run_id,
+            phase="preparing",
+            step="Preparing analysis",
+            percent=15,
+            message="正在准备模型、数据源和智能体配置。",
+        )
+        repo.session.commit()
+        repo.record_progress(
+            run_id,
+            phase="analyzing",
+            step="Running agent analysis",
+            percent=35,
+            message="智能体正在分析行情、新闻、情绪和基本面。",
+        )
+        repo.session.commit()
         output = executor(
             run.ticker,
             run.trade_date,
@@ -37,6 +53,14 @@ def execute_analysis_run(
         if run.status == "cancelled":
             repo.session.commit()
             return
+        repo.record_progress(
+            run_id,
+            phase="saving",
+            step="Saving analysis reports",
+            percent=85,
+            message="正在整理最终结论并保存 Markdown 报告。",
+        )
+        repo.session.commit()
         repo.store_success(
             run_id=run_id,
             decision=output["decision"],
