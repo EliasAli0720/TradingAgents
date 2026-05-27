@@ -11,14 +11,16 @@
 
 ## 目标
 
-把 phase/7 的服务化推进到"前端 SPA 接管 Streamlit 大部分能力"的里程碑，并修掉这一过程中暴露出的 MiniMax 中国站接入问题、目录数据流缺陷。整体 7 个提交 + 一次未提交的加固，按时间顺序分为六块：
+把 phase/7 的服务化推进到"前端 SPA 接管 Streamlit 大部分能力"的里程碑，并修掉这一过程中暴露出的 MiniMax 中国站接入问题、目录数据流缺陷。整体 10 个提交，按时间顺序分为八块：
 
+0. **文档整理**：整理 API / curl / 集成文档，把旧 TODO 归并到新的文档结构。
 1. **后端**：把 LLM provider / 模型下拉数据从 Python 硬编码搬进 DB，新增 `GET /settings/model/options`。
 2. **前端**：从零搭一套独立 SPA（`web/`），替代 Streamlit 仪表盘的分析侧能力。
 3. **前端 v2**：把模型设置改成"按后端 options 受控下拉"，分析结果加 DecisionCard + Markdown Tab 渲染。
 4. **Worker**：分析任务运行完自动写入 Markdown 报告文件树，并把 `reports/` 加进 `.gitignore`。
 5. **接入加固**：MiniMax `reasoning_split` 走 `extra_body`、minimax-cn 端点回退 `/v1` + 反向迁移、CN 模型目录与官方对齐。
 6. **目录数据流**：`ensure_seeded()` 始终全量重建 model_options，补齐 openai/google/anthropic 的 `default_backend_url`。
+7. **前端二次打磨**：设置抽屉、run_progress stepper、模型设置受控化和 i18n 全量覆盖。
 
 ## 非目标
 
@@ -27,6 +29,28 @@
 - 不为已经把无效模型 ID 落到 `user_model_settings` 的历史用户做自动重写；保留状态，由用户在 SPA 上下次保存时显式重选。
 - 不处理 MiniMax Token Plan / Highspeed 订阅状态（账号侧问题）；接入侧只负责把"不在官方支持列表的模型"从下拉里移除。
 - 不实装真实的交易接口（Quick Trade / Portfolio / Performance / Trades / Risk）；SPA 给出 placeholder 页面 + Phase 3 后端补完信号。
+
+---
+
+## 块 0：文档整理与旧 TODO 归并
+
+**提交**：`39779d9 feat: Organize documents`
+
+### 动机
+
+phase/7 开始服务化和 SPA 前，需要先把散落在根目录、API 文档和旧 TODO 文件里的工作项收拢，避免后续实现、测试和手工验收缺少统一入口。
+
+### 主要变更
+
+- 新增 `docs/api-curl-tests.md`，把认证、模型设置、任务创建、结果查询等 API 的 curl 验证命令集中起来。
+- 更新 `docs/api-endpoints-current.md` 和 `docs/integration-api-rpc.md`，让当前 HTTP API、RPC 集成点和后续 SPA 需求保持一致。
+- 新增 / 整理 `TODO.md`，把服务化、仪表盘、模型接入、运行验证等后续工作按模块归类。
+- 调整 `docs/superpowers/specs/2026-05-26-analysis-api-auth-multitenancy.md`，同步认证与多租户方案里的最新约束。
+- 删除旧的 `tradingagents/llm_clients/TODO.md`，避免模型接入 TODO 分散维护。
+
+### 注意
+
+该提交还误加入了根目录 `.DS_Store`；后续若整理仓库卫生，应单独清理生成物和系统文件。
 
 ---
 
@@ -173,7 +197,9 @@ worker 跑完任务后，DB 里只有 `final_state` JSON。要让用户能查看
 
 ---
 
-## 块 5：MiniMax 接入加固（未提交）
+## 块 5：MiniMax 接入加固
+
+**提交**：`e6f46e0 fix(llm): MiniMax 接入加固与模型目录自愈`（与块 6 合并提交，含 7 个文件、+199/-28）
 
 ### 5.1 `reasoning_split` 走 `extra_body`
 
@@ -229,6 +255,8 @@ payload["extra_body"] = extra_body
 
 ## 块 6：目录数据流自愈 + 补齐 backend_url
 
+**提交**：与块 5 合并在 `e6f46e0`。
+
 ### 6.1 `ensure_seeded()` 始终全量重建 model_options
 
 **症状**：修完 `_MINIMAX_CN_MODELS` 重启 API，下拉仍是旧 8 个 ID。
@@ -263,7 +291,11 @@ Azure 保持 `None + editable=True`，因为它按客户 deployment 拼 URL，�
 
 ---
 
-## 块 7：前端二次打磨（未提交）
+## 块 7：前端二次打磨 + run_progress 事件链路
+
+**提交**：
+- `153bc78 feat(api): record run progress events for stepper UI`（后端 progress 事件）
+- `704be29 feat(web): settings drawer + run progress stepper + i18n 全量覆盖`（前端 UI 重排、RunProgress、模型设置受控、i18n 全量、本 spec 文档）
 
 ### 7.1 设置抽屉移到右上角悬浮
 
