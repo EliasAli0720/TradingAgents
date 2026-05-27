@@ -102,14 +102,21 @@ curl -i -X POST "$BASE_URL/auth/logout" \
 
 ## 3. 模型设置接口
 
-### 3.1 GET /settings/model（需登录）
+### 3.1 GET /settings/model/options（需登录）
+
+```bash
+curl -i "$BASE_URL/settings/model/options" \
+  -b "$COOKIE_JAR"
+```
+
+### 3.2 GET /settings/model（需登录）
 
 ```bash
 curl -i "$BASE_URL/settings/model" \
   -b "$COOKIE_JAR"
 ```
 
-### 3.2 PUT /settings/model（需登录 + CSRF）
+### 3.3 PUT /settings/model（需登录 + CSRF）
 
 ```bash
 curl -i -X PUT "$BASE_URL/settings/model" \
@@ -118,16 +125,16 @@ curl -i -X PUT "$BASE_URL/settings/model" \
   -b "$COOKIE_JAR" \
   -d '{
     "llm_provider": "openai",
-    "deep_think_llm": "gpt-4.1",
-    "quick_think_llm": "gpt-4.1-mini",
-    "backend_url": "https://api.openai.com/v1",
+    "deep_think_llm": "gpt-5.4",
+    "quick_think_llm": "gpt-5.4-mini",
+    "backend_url": null,
     "api_key": "sk-test-abcdef123456"
   }'
 ```
 
 > 不想覆盖已有 api_key 时，省略 `api_key` 字段或传 `null`。
 
-### 3.3 DELETE /settings/model/api-key（需登录 + CSRF）
+### 3.4 DELETE /settings/model/api-key（需登录 + CSRF）
 
 ```bash
 curl -i -X DELETE "$BASE_URL/settings/model/api-key" \
@@ -135,7 +142,7 @@ curl -i -X DELETE "$BASE_URL/settings/model/api-key" \
   -b "$COOKIE_JAR"
 ```
 
-### 3.4 POST /settings/model/validate（需登录 + CSRF）
+### 3.5 POST /settings/model/validate（需登录 + CSRF）
 
 ```bash
 curl -i -X POST "$BASE_URL/settings/model/validate" \
@@ -272,13 +279,14 @@ curl -i "$BASE_URL/redoc"
 2. `POST /auth/register` 注册首个 admin
 3. `POST /auth/login` 登录（写入 cookie）
 4. `GET /auth/me` 验证登录态
-5. `PUT /settings/model` 配置模型
-6. `POST /settings/model/validate` 校验密钥来源
-7. `POST /runs` 创建分析任务，记下 `run_id`
-8. `GET /runs/{run_id}` 轮询状态，或 `GET /runs/{run_id}/events` 订阅 SSE
-9. `GET /runs/{run_id}/result` 任务成功后取结果
-10. `GET /admin/runs` 管理员视角查看所有任务
-11. `POST /auth/logout` 注销
+5. `GET /settings/model/options` 获取可选 provider / quick 模型 / deep 模型
+6. `PUT /settings/model` 配置模型
+7. `POST /settings/model/validate` 校验密钥来源
+8. `POST /runs` 创建分析任务，记下 `run_id`
+9. `GET /runs/{run_id}` 轮询状态，或 `GET /runs/{run_id}/events` 订阅 SSE
+10. `GET /runs/{run_id}/result` 任务成功后取结果
+11. `GET /admin/runs` 管理员视角查看所有任务
+12. `POST /auth/logout` 注销
 
 ---
 

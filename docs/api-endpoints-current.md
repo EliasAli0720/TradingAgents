@@ -164,6 +164,49 @@
 | `openrouter` | `OPENROUTER_API_KEY` |
 | `ollama` | 不需要 API key |
 
+### GET /settings/model/options
+
+需要登录。获取服务端数据库中当前可选的模型供应商和模型目录，前端应使用这个接口渲染 provider、quick/deep 模型下拉框和高级 endpoint 配置，而不是硬编码或让用户任意输入。
+
+成功响应：`200`
+
+```json
+{
+  "providers": [
+    {
+      "id": "openai",
+      "label": "OpenAI",
+      "required_env_var": "OPENAI_API_KEY",
+      "default_backend_url": null,
+      "backend_url_editable": false,
+      "supports_custom_model": false,
+      "quick_models": [
+        {
+          "id": "gpt-5.4-mini",
+          "label": "GPT-5.4 Mini - Fast, strong coding and tool use"
+        }
+      ],
+      "deep_models": [
+        {
+          "id": "gpt-5.4",
+          "label": "GPT-5.4 - Previous-gen frontier, 1M context, cost-effective"
+        }
+      ]
+    }
+  ]
+}
+```
+
+字段说明：
+
+- `required_env_var`：服务端兜底密钥对应的环境变量；`ollama` 为 `null`
+- `default_backend_url`：该 provider 的默认兼容 endpoint；为空时由底层 SDK 使用默认地址
+- `backend_url_editable`：前端是否应该展示 endpoint 编辑入口
+- `supports_custom_model`：是否允许用户输入不在 `quick_models` / `deep_models` 中的自定义模型 ID
+- `quick_models` / `deep_models`：当前数据库中允许选择的 quick/deep 模型
+
+说明：服务启动时会把内置模型目录初始化到数据库的 `llm_provider_options` 和 `llm_model_options` 表；之后接口和保存校验都从数据库读取。
+
 ### GET /settings/model
 
 需要登录。获取当前用户的模型配置。
@@ -173,9 +216,9 @@
 ```json
 {
   "llm_provider": "openai",
-  "deep_think_llm": "gpt-4.1",
-  "quick_think_llm": "gpt-4.1-mini",
-  "backend_url": "https://api.openai.com/v1",
+  "deep_think_llm": "gpt-5.4",
+  "quick_think_llm": "gpt-5.4-mini",
+  "backend_url": null,
   "has_api_key": true,
   "api_key_masked": "sk-t...3456"
 }
@@ -194,9 +237,9 @@
 ```json
 {
   "llm_provider": "openai",
-  "deep_think_llm": "gpt-4.1",
-  "quick_think_llm": "gpt-4.1-mini",
-  "backend_url": "https://api.openai.com/v1",
+  "deep_think_llm": "gpt-5.4",
+  "quick_think_llm": "gpt-5.4-mini",
+  "backend_url": null,
   "api_key": "sk-test-abcdef123456"
 }
 ```
@@ -204,8 +247,8 @@
 字段说明：
 
 - `llm_provider`：支持 `anthropic`、`azure`、`deepseek`、`glm`、`glm-cn`、`google`、`minimax`、`minimax-cn`、`ollama`、`openai`、`openrouter`、`qwen`、`qwen-cn`、`xai`
-- `deep_think_llm`：深度思考模型 ID，不能为空
-- `quick_think_llm`：快速思考模型 ID，不能为空
+- `deep_think_llm`：深度思考模型 ID，不能为空；对不支持自定义模型的 provider，必须存在于 `/settings/model/options` 的 `deep_models`
+- `quick_think_llm`：快速思考模型 ID，不能为空；对不支持自定义模型的 provider，必须存在于 `/settings/model/options` 的 `quick_models`
 - `backend_url`：可选；如果填写，必须以 `http://` 或 `https://` 开头
 - `api_key`：可选；传入非空值时替换当前用户保存的 API key；不传或传 `null` 时保留旧 key
 
@@ -214,9 +257,9 @@
 ```json
 {
   "llm_provider": "openai",
-  "deep_think_llm": "gpt-4.1",
-  "quick_think_llm": "gpt-4.1-mini",
-  "backend_url": "https://api.openai.com/v1",
+  "deep_think_llm": "gpt-5.4",
+  "quick_think_llm": "gpt-5.4-mini",
+  "backend_url": null,
   "has_api_key": true,
   "api_key_masked": "sk-t...3456"
 }
@@ -502,6 +545,7 @@ data: {"run_id":"uuid"}
 | POST | `/auth/logout` | 是 | 是 | 任意登录用户 | 注销 |
 | GET | `/auth/me` | 是 | 否 | 任意登录用户 | 当前用户信息 |
 | POST | `/auth/change-password` | 是 | 是 | 任意登录用户 | 修改密码 |
+| GET | `/settings/model/options` | 是 | 否 | 任意登录用户 | 获取可选模型目录 |
 | GET | `/settings/model` | 是 | 否 | 任意登录用户 | 获取模型配置 |
 | PUT | `/settings/model` | 是 | 是 | 任意登录用户 | 保存模型配置 |
 | DELETE | `/settings/model/api-key` | 是 | 是 | 任意登录用户 | 清空用户模型 API key |

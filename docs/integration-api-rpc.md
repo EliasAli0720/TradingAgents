@@ -264,6 +264,16 @@ data: {"run_id":"run_01J...","reason":"user requested cancellation"}
 - worker 在 executor 返回后会重新读取 run 状态；如果已经取消，不写入 success result。
 - 已经进入 `TradingAgentsGraph.propagate()` 的任务不保证立即停止当前 LLM 或数据供应商调用；这需要后续 graph 内协作式取消。
 
+### 读取可选模型目录
+
+```http
+GET /settings/model/options
+```
+
+宿主项目应该通过该接口读取 TradingAgents 服务端数据库中的 provider、quick 模型、deep 模型、默认 endpoint、是否允许自定义模型、以及所需 API key 环境变量。前端配置表单应优先使用这个目录生成选择项，再通过 `PUT /settings/model` 保存用户选择。
+
+模型目录由服务启动时初始化到 `llm_provider_options` 和 `llm_model_options` 表；保存模型设置时也会从这两张表校验 provider/model 组合。
+
 ### 校验设置
 
 ```http

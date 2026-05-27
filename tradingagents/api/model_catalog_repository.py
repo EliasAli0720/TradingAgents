@@ -75,6 +75,9 @@ class LLMModelCatalogRepository:
             row.supports_custom_model = supports_custom_model
             row.sort_order = sort_order
 
+        self.session.flush()
+
+        for seed in PROVIDER_SEEDS:
             self.session.execute(
                 delete(LLMModelOption).where(LLMModelOption.provider_id == seed.provider_id)
             )
