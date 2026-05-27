@@ -3,7 +3,17 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, Optional
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
@@ -114,3 +124,33 @@ class UserModelSetting(Base):
     encrypted_api_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class LLMProviderOption(Base):
+    __tablename__ = "llm_provider_options"
+
+    provider_id: Mapped[str] = mapped_column(String, primary_key=True)
+    label: Mapped[str] = mapped_column(String, nullable=False)
+    required_env_var: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    default_backend_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    backend_url_editable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    supports_custom_model: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class LLMModelOption(Base):
+    __tablename__ = "llm_model_options"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    provider_id: Mapped[str] = mapped_column(
+        String, ForeignKey("llm_provider_options.provider_id", ondelete="CASCADE"), nullable=False
+    )
+    mode: Mapped[str] = mapped_column(String, nullable=False)
+    model_id: Mapped[str] = mapped_column(String, nullable=False)
+    label: Mapped[str] = mapped_column(String, nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("provider_id", "mode", "model_id", name="uq_llm_model_option"),
+        Index("idx_llm_model_options_provider_mode_order", "provider_id", "mode", "sort_order"),
+    )

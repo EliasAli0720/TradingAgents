@@ -45,9 +45,13 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, futu
 
 def init_db() -> None:
     from tradingagents.api import models  # noqa: F401
+    from tradingagents.api.model_catalog_repository import LLMModelCatalogRepository
 
     Base.metadata.create_all(engine)
     ensure_additive_schema(engine)
+    with SessionLocal() as session:
+        LLMModelCatalogRepository(session).ensure_seeded()
+        session.commit()
 
 
 def ensure_additive_schema(db_engine) -> None:

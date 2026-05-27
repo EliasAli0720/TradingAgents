@@ -48,6 +48,27 @@ def test_get_model_settings_returns_404_until_configured():
     assert response.status_code == 404
 
 
+def test_get_model_options_returns_seeded_provider_catalog():
+    client = _client()
+    _login(client)
+
+    response = client.get("/settings/model/options")
+
+    assert response.status_code == 200
+    providers = {provider["id"]: provider for provider in response.json()["providers"]}
+    assert providers["openai"]["required_env_var"] == "OPENAI_API_KEY"
+    assert providers["openai"]["supports_custom_model"] is False
+    assert providers["openai"]["backend_url_editable"] is False
+    assert providers["openai"]["quick_models"][0] == {
+        "id": "gpt-5.4-mini",
+        "label": "GPT-5.4 Mini - Fast, strong coding and tool use",
+    }
+    assert providers["ollama"]["required_env_var"] is None
+    assert providers["ollama"]["default_backend_url"] == "http://localhost:11434/v1"
+    assert providers["ollama"]["backend_url_editable"] is True
+    assert providers["ollama"]["supports_custom_model"] is True
+
+
 def test_put_then_get_model_settings_for_current_user():
     client = _client()
     csrf = _login(client)
@@ -112,6 +133,46 @@ def test_put_model_settings_rejects_invalid_backend_url():
     )
 
     assert response.status_code == 422
+
+
+def test_put_model_settings_rejects_unknown_model_for_strict_provider():
+    client = _client()
+    csrf = _login(client)
+
+    response = client.put(
+        "/settings/model",
+        json={
+            "llm_provider": "openai",
+            "deep_think_llm": "gpt-5.4",
+            "quick_think_llm": "missing-model",
+            "backend_url": None,
+        },
+        headers={"X-CSRF-Token": csrf},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "unsupported quick_think_llm for provider openai"
+
+
+def test_put_model_settings_allows_custom_model_for_custom_provider():
+    client = _client()
+    csrf = _login(client)
+
+    response = client.put(
+        "/settings/model",
+        json={
+            "llm_provider": "qwen",
+            "deep_think_llm": "qwen-next-experimental",
+            "quick_think_llm": "qwen-fast-experimental",
+            "backend_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+        },
+        headers={"X-CSRF-Token": csrf},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["llm_provider"] == "qwen"
+    assert response.json()["deep_think_llm"] == "qwen-next-experimental"
+    assert response.json()["quick_think_llm"] == "qwen-fast-experimental"
 
 
 def test_model_settings_stores_masks_preserves_and_clears_api_key(monkeypatch):

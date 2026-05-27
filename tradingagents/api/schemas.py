@@ -165,6 +165,26 @@ class ModelSettingsResponse(BaseModel):
     api_key_masked: Optional[str]
 
 
+class ModelOptionResponse(BaseModel):
+    id: str
+    label: str
+
+
+class ModelProviderOptionResponse(BaseModel):
+    id: str
+    label: str
+    required_env_var: Optional[str]
+    default_backend_url: Optional[str]
+    backend_url_editable: bool
+    supports_custom_model: bool
+    quick_models: list[ModelOptionResponse]
+    deep_models: list[ModelOptionResponse]
+
+
+class ModelOptionsResponse(BaseModel):
+    providers: list[ModelProviderOptionResponse]
+
+
 class ModelSettingsValidationResponse(BaseModel):
     valid: bool
     provider: str

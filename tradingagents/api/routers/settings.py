@@ -8,9 +8,13 @@ from sqlalchemy.orm import Session
 from tradingagents.llm_clients.api_key_env import get_api_key_env
 from tradingagents.api.crypto import decrypt_secret
 from tradingagents.api.deps import get_current_user, get_db_session
+from tradingagents.api.model_catalog_repository import LLMModelCatalogRepository
 from tradingagents.api.model_settings_repository import UserModelSettingsRepository
 from tradingagents.api.models import User
 from tradingagents.api.schemas import (
+    ModelOptionResponse,
+    ModelOptionsResponse,
+    ModelProviderOptionResponse,
     ModelSettingsRequest,
     ModelSettingsResponse,
     ModelSettingsValidationResponse,
@@ -35,6 +39,45 @@ def _response_for_settings(
     )
 
 
+def _response_for_model_options(
+    repo: LLMModelCatalogRepository,
+) -> ModelOptionsResponse:
+    providers = []
+    for provider in repo.list_provider_options():
+        quick_models = [
+            ModelOptionResponse(id=model.model_id, label=model.label)
+            for model in repo.list_model_options(provider.provider_id, "quick")
+        ]
+        deep_models = [
+            ModelOptionResponse(id=model.model_id, label=model.label)
+            for model in repo.list_model_options(provider.provider_id, "deep")
+        ]
+        providers.append(
+            ModelProviderOptionResponse(
+                id=provider.provider_id,
+                label=provider.label,
+                required_env_var=provider.required_env_var,
+                default_backend_url=provider.default_backend_url,
+                backend_url_editable=provider.backend_url_editable,
+                supports_custom_model=provider.supports_custom_model,
+                quick_models=quick_models,
+                deep_models=deep_models,
+            )
+        )
+    return ModelOptionsResponse(providers=providers)
+
+
+@router.get("/model/options", response_model=ModelOptionsResponse)
+def get_model_options(
+    session: Session = Depends(get_db_session),
+    _user: User = Depends(get_current_user),
+):
+    repo = LLMModelCatalogRepository(session)
+    response = _response_for_model_options(repo)
+    session.commit()
+    return response
+
+
 @router.get("/model", response_model=ModelSettingsResponse)
 def get_model_settings(
     session: Session = Depends(get_db_session),
@@ -53,6 +96,15 @@ def put_model_settings(
     session: Session = Depends(get_db_session),
     user: User = Depends(get_current_user),
 ):
+    catalog = LLMModelCatalogRepository(session)
+    validation_error = catalog.validate_model_settings(
+        request.llm_provider,
+        request.quick_think_llm,
+        request.deep_think_llm,
+    )
+    if validation_error:
+        raise HTTPException(status_code=422, detail=validation_error)
+
     repo = UserModelSettingsRepository(session)
     settings = repo.upsert(
         user_id=user.user_id,
