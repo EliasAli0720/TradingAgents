@@ -34,6 +34,27 @@ def test_database_url_uses_postgresql_env(monkeypatch):
     )
 
 
+def test_concurrency_capacity_settings_read_from_env(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
+    monkeypatch.setenv("TRADINGAGENTS_MAX_RUNNING_SYSTEM", "100")
+    monkeypatch.setenv("TRADINGAGENTS_MAX_RUNNING_PER_USER", "5")
+    monkeypatch.setenv("TRADINGAGENTS_MAX_QUEUED_PER_USER", "50")
+    monkeypatch.setenv("TRADINGAGENTS_DISPATCH_INTERVAL_SECONDS", "1")
+    monkeypatch.setenv("TRADINGAGENTS_RUN_LEASE_SECONDS", "600")
+    monkeypatch.setenv("TRADINGAGENTS_WORKER_HEARTBEAT_SECONDS", "10")
+    monkeypatch.setenv("TRADINGAGENTS_WORKER_STALE_AFTER_SECONDS", "90")
+
+    settings = get_api_settings()
+
+    assert settings.max_running_system == 100
+    assert settings.max_running_per_user == 5
+    assert settings.max_queued_per_user == 50
+    assert settings.dispatch_interval_seconds == 1
+    assert settings.run_lease_seconds == 600
+    assert settings.worker_heartbeat_seconds == 10
+    assert settings.worker_stale_after_seconds == 90
+
+
 def test_auth_defaults(monkeypatch):
     for key in [
         "TRADINGAGENTS_API_SESSION_TTL_DAYS",

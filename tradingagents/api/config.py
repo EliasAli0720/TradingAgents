@@ -27,6 +27,13 @@ class ApiSettings:
     cookie_secure: bool = True
     cookie_domain: Optional[str] = None
     login_rate_limit_per_min: int = 5
+    max_running_system: int = 100
+    max_running_per_user: int = 5
+    max_queued_per_user: int = 50
+    dispatch_interval_seconds: int = 1
+    run_lease_seconds: int = 600
+    worker_heartbeat_seconds: int = 10
+    worker_stale_after_seconds: int = 90
 
 
 def get_api_settings() -> ApiSettings:
@@ -57,5 +64,18 @@ def get_api_settings() -> ApiSettings:
         cookie_domain=os.environ.get("TRADINGAGENTS_API_COOKIE_DOMAIN") or None,
         login_rate_limit_per_min=int(
             os.environ.get("TRADINGAGENTS_API_LOGIN_RATE_LIMIT_PER_MIN", "5")
+        ),
+        max_running_system=int(os.environ.get("TRADINGAGENTS_MAX_RUNNING_SYSTEM", "100")),
+        max_running_per_user=int(os.environ.get("TRADINGAGENTS_MAX_RUNNING_PER_USER", "5")),
+        max_queued_per_user=int(os.environ.get("TRADINGAGENTS_MAX_QUEUED_PER_USER", "50")),
+        dispatch_interval_seconds=int(
+            os.environ.get("TRADINGAGENTS_DISPATCH_INTERVAL_SECONDS", "1")
+        ),
+        run_lease_seconds=int(os.environ.get("TRADINGAGENTS_RUN_LEASE_SECONDS", "600")),
+        worker_heartbeat_seconds=int(
+            os.environ.get("TRADINGAGENTS_WORKER_HEARTBEAT_SECONDS", "10")
+        ),
+        worker_stale_after_seconds=int(
+            os.environ.get("TRADINGAGENTS_WORKER_STALE_AFTER_SECONDS", "90")
         ),
     )

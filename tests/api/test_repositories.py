@@ -3,13 +3,17 @@ from threading import Thread
 
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.schema import CreateTable
 
 from tradingagents.api.db import Base, create_db_engine, ensure_additive_schema
 from tradingagents.api.models import (
     AnalysisRun,
+    AnalysisMemoryEntry,
     AnalysisRunEvent,
+    AnalysisRunArtifact,
     AnalysisRunResult,
     User,
     UserModelSetting,
@@ -22,6 +26,15 @@ def _session():
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine, future=True)
     return Session()
+
+
+def test_analysis_run_postgresql_schema_has_capacity_server_defaults():
+    ddl = str(CreateTable(AnalysisRun.__table__).compile(dialect=postgresql.dialect()))
+
+    assert "priority INTEGER DEFAULT 0 NOT NULL" in ddl
+    assert "attempt_count INTEGER DEFAULT 0 NOT NULL" in ddl
+    assert "max_attempts INTEGER DEFAULT 2 NOT NULL" in ddl
+    assert "updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL" in ddl
 
 
 def test_analysis_tables_can_store_run_event_and_result():
@@ -207,6 +220,84 @@ def test_repository_creates_run_and_queued_event():
     assert run.status == "queued"
     events = repo.list_events(run.run_id)
     assert [event.event_type for event in events] == ["run_queued"]
+
+
+def test_analysis_run_capacity_columns_exist():
+    session = _session()
+    repo = AnalysisRunRepository(session)
+
+    run = repo.create_run(
+        "NVDA",
+        date(2026, 1, 15),
+        "stock",
+        ["market"],
+        user_id="usr_1",
+        llm_config={"llm_provider": "openai"},
+    )
+    assert run.updated_at is not None
+
+    session.commit()
+
+    saved = repo.get_run(run.run_id)
+    assert saved.priority == 0
+    assert saved.attempt_count == 0
+    assert saved.max_attempts == 2
+    assert saved.current_phase is None
+    assert saved.progress_percent is None
+    assert saved.dispatched_at is None
+    assert saved.heartbeat_at is None
+    assert saved.lease_expires_at is None
+    assert saved.updated_at is not None
+
+
+def test_artifact_and_memory_models_persist():
+    session = _session()
+    now = datetime.now(timezone.utc)
+    run = AnalysisRun(
+        run_id="run_schema",
+        status="queued",
+        ticker="NVDA",
+        trade_date=date(2026, 1, 15),
+        asset_type="stock",
+        analysts=["market"],
+        user_id="usr_1",
+        llm_config={},
+        current_step=None,
+        celery_task_id=None,
+        error=None,
+        created_at=now,
+        updated_at=now,
+    )
+    session.add(run)
+    session.add(
+        AnalysisRunArtifact(
+            artifact_id="art_1",
+            run_id="run_schema",
+            kind="report_md",
+            storage_backend="local",
+            storage_key="artifacts/run_schema/reports/complete_report.md",
+            content_type="text/markdown",
+            size_bytes=12,
+            sha256="abc",
+            created_at=now,
+        )
+    )
+    session.add(
+        AnalysisMemoryEntry(
+            user_id="usr_1",
+            run_id="run_schema",
+            ticker="NVDA",
+            trade_date=date(2026, 1, 15),
+            rating="Hold",
+            decision_markdown="Rating: Hold",
+            pending=True,
+            created_at=now,
+        )
+    )
+    session.commit()
+
+    assert session.get(AnalysisRunArtifact, "art_1").run_id == "run_schema"
+    assert session.query(AnalysisMemoryEntry).one().ticker == "NVDA"
 
 
 def test_repository_stores_success_result():

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Any, Optional
 
 from sqlalchemy import (
@@ -13,6 +13,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -22,6 +23,10 @@ from tradingagents.api.db import Base
 
 
 JsonType = JSON().with_variant(JSONB, "postgresql")
+
+
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class AnalysisRun(Base):
@@ -35,10 +40,36 @@ class AnalysisRun(Base):
     analysts: Mapped[list[str]] = mapped_column(JsonType, nullable=False)
     user_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
     llm_config: Mapped[Optional[dict[str, Any]]] = mapped_column(JsonType, nullable=True)
+    priority: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    attempt_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    max_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=2, server_default=text("2")
+    )
+    current_phase: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    progress_percent: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     current_step: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     celery_task_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utcnow,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    dispatched_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    heartbeat_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    lease_expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -47,6 +78,27 @@ class AnalysisRun(Base):
         Index("idx_analysis_runs_ticker_trade_date", "ticker", "trade_date"),
         Index("idx_analysis_runs_user_id_created_at", "user_id", "created_at"),
     )
+
+
+class AnalysisRunArtifact(Base):
+    __tablename__ = "analysis_run_artifacts"
+
+    artifact_id: Mapped[str] = mapped_column(String, primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("analysis_runs.run_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    storage_backend: Mapped[str] = mapped_column(String, nullable=False)
+    storage_key: Mapped[str] = mapped_column(String, nullable=False)
+    content_type: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (Index("idx_analysis_run_artifacts_run_id_kind", "run_id", "kind"),)
 
 
 class AnalysisRunEvent(Base):
@@ -76,6 +128,35 @@ class AnalysisRunResult(Base):
     reports: Mapped[dict[str, Any]] = mapped_column(JsonType, nullable=False)
     final_state: Mapped[dict[str, Any]] = mapped_column(JsonType, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class AnalysisMemoryEntry(Base):
+    __tablename__ = "analysis_memory_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    run_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("analysis_runs.run_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    ticker: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    rating: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    decision_markdown: Mapped[str] = mapped_column(Text, nullable=False)
+    pending: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        Index(
+            "idx_analysis_memory_entries_user_ticker_pending_created",
+            "user_id",
+            "ticker",
+            "pending",
+            "created_at",
+        ),
+    )
 
 
 class User(Base):

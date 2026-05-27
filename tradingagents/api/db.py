@@ -56,8 +56,57 @@ def init_db() -> None:
 
 def ensure_additive_schema(db_engine) -> None:
     inspector = inspect(db_engine)
-    if "user_model_settings" not in inspector.get_table_names():
+    table_names = set(inspector.get_table_names())
+
+    if "analysis_runs" in table_names:
+        run_columns = {column["name"] for column in inspector.get_columns("analysis_runs")}
+        timestamp_type = (
+            "TIMESTAMP WITH TIME ZONE"
+            if db_engine.dialect.name == "postgresql"
+            else "DATETIME"
+        )
+        run_additions = {
+            "priority": "INTEGER NOT NULL DEFAULT 0",
+            "attempt_count": "INTEGER NOT NULL DEFAULT 0",
+            "max_attempts": "INTEGER NOT NULL DEFAULT 2",
+            "current_phase": "VARCHAR",
+            "progress_percent": "INTEGER",
+            "dispatched_at": timestamp_type,
+            "heartbeat_at": timestamp_type,
+            "lease_expires_at": timestamp_type,
+        }
+        with db_engine.begin() as connection:
+            for column_name, column_definition in run_additions.items():
+                if column_name not in run_columns:
+                    connection.execute(
+                        text(
+                            f"ALTER TABLE analysis_runs ADD COLUMN "
+                            f"{column_name} {column_definition}"
+                        )
+                    )
+            if "updated_at" not in run_columns:
+                if db_engine.dialect.name == "postgresql":
+                    connection.execute(
+                        text(
+                            "ALTER TABLE analysis_runs ADD COLUMN "
+                            "updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP"
+                        )
+                    )
+                else:
+                    connection.execute(
+                        text("ALTER TABLE analysis_runs ADD COLUMN updated_at DATETIME")
+                    )
+                    connection.execute(
+                        text(
+                            "UPDATE analysis_runs "
+                            "SET updated_at = created_at "
+                            "WHERE updated_at IS NULL"
+                        )
+                    )
+
+    if "user_model_settings" not in table_names:
         return
+
     columns = {column["name"] for column in inspector.get_columns("user_model_settings")}
     if "encrypted_api_key" not in columns:
         with db_engine.begin() as connection:

@@ -50,6 +50,7 @@ class AnalysisRunRepository:
             celery_task_id=None,
             error=None,
             created_at=now,
+            updated_at=now,
         )
         self.session.add(run)
         self.add_event(run.run_id, "run_queued", {"run_id": run.run_id, "status": "queued"})
