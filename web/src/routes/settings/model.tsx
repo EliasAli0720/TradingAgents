@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { settingsApi, type ModelSettingsInput, type ProviderOption, type ModelChoice } from '@/api/settings';
+import { settingsApi, type ModelSettingsInput, type ProviderOption, type ModelChoice, type ValidateResult } from '@/api/settings';
 import type { ApiError } from '@/api/client';
 import { Subheader, Caption, Info } from '@/components/ui/Page';
+import { t } from '@/i18n';
 
 const CUSTOM = '__custom__';
 
@@ -125,31 +126,34 @@ export default function ModelSettingsPage() {
 
   return (
     <div className="max-w-2xl">
-      <Subheader>模型设置</Subheader>
-      <Caption>从后端支持的列表中选择 provider 与模型；不填 API key 时优先用已保存的或服务端环境变量。</Caption>
+      <Subheader>{t('nav.model')}</Subheader>
+      <Caption>{t('model.caption')}</Caption>
 
       {options.isLoading || current.isLoading || !initialized ? (
-        <div className="text-muted text-sm">加载中…</div>
+        <div className="text-muted text-sm">{t('common.loading')}</div>
       ) : options.error || !options.data ? (
-        <Info>加载 provider 列表失败。</Info>
+        <Info>{t('model.options_failed')}</Info>
       ) : (
         <>
           {/* Current key state */}
           <div className="card flex items-center justify-between mb-4">
             <div className="text-sm">
-              当前 key：
+              {t('model.current_key')}
               {current.data?.has_api_key
                 ? <span className="font-mono">{current.data.api_key_masked}</span>
-                : <span className="text-muted">未设置（回退服务端 env）</span>}
+                : <span className="text-muted">{t('model.key_fallback')}</span>}
             </div>
             <div className="flex gap-2">
               <button
                 type="button"
                 className="btn-ghost"
                 disabled={validate.isPending || !current.data}
-                onClick={() => validate.mutate()}
+                onClick={() => {
+                  validate.reset();
+                  validate.mutate();
+                }}
               >
-                {validate.isPending ? '校验中…' : '校验密钥'}
+                {validate.isPending ? t('model.validating') : t('model.validate_key')}
               </button>
               <button
                 type="button"
@@ -157,22 +161,27 @@ export default function ModelSettingsPage() {
                 disabled={!current.data?.has_api_key || clearKey.isPending}
                 onClick={() => clearKey.mutate()}
               >
-                清空 key
+                {t('model.clear_key')}
               </button>
             </div>
           </div>
 
           {validate.data && (
-            <Info>
-              valid: <b>{String(validate.data.valid)}</b> · source: {validate.data.api_key_source}
-              <div className="text-muted mt-1">{validate.data.message}</div>
-            </Info>
+            <ValidationResultCard
+              result={validate.data}
+              providerLabel={currentProvider?.label}
+              modelId={current.data?.quick_think_llm}
+            />
+          )}
+
+          {validate.error && (
+            <ValidationErrorCard error={validate.error as unknown as ApiError} />
           )}
 
           <form className="card space-y-4 mt-4" onSubmit={onSubmit}>
             {/* Provider */}
             <div>
-              <label className="label">Provider</label>
+              <label className="label">{t('model.provider')}</label>
               <select
                 className="input"
                 value={form.provider}
@@ -184,10 +193,10 @@ export default function ModelSettingsPage() {
               </select>
               {currentProvider && (
                 <div className="text-xs text-muted mt-1">
-                  服务端兜底环境变量：
+                  {t('model.service_env')}
                   {currentProvider.required_env_var
                     ? <code className="font-mono">{currentProvider.required_env_var}</code>
-                    : <span>不需要</span>}
+                    : <span>{t('model.not_required')}</span>}
                 </div>
               )}
             </div>
@@ -195,7 +204,7 @@ export default function ModelSettingsPage() {
             {/* Models */}
             <div className="grid grid-cols-2 gap-3">
               <ModelPicker
-                label="Deep think LLM"
+                label={t('model.deep_llm')}
                 list={currentProvider?.deep_models ?? []}
                 supportsCustom={currentProvider?.supports_custom_model ?? false}
                 value={form.deep}
@@ -203,7 +212,7 @@ export default function ModelSettingsPage() {
                 onChange={(v, c) => setForm((f) => ({ ...f, deep: v, deepCustom: c ?? f.deepCustom }))}
               />
               <ModelPicker
-                label="Quick think LLM"
+                label={t('model.quick_llm')}
                 list={currentProvider?.quick_models ?? []}
                 supportsCustom={currentProvider?.supports_custom_model ?? false}
                 value={form.quick}
@@ -214,7 +223,7 @@ export default function ModelSettingsPage() {
 
             {/* Backend URL */}
             <div>
-              <label className="label">Backend URL</label>
+              <label className="label">{t('model.backend_url')}</label>
               <input
                 className="input"
                 placeholder={currentProvider?.default_backend_url ?? ''}
@@ -223,25 +232,25 @@ export default function ModelSettingsPage() {
                 readOnly={!currentProvider?.backend_url_editable}
               />
               {!currentProvider?.backend_url_editable && (
-                <div className="text-xs text-muted mt-1">该 provider 的 backend URL 由服务端固定。</div>
+                <div className="text-xs text-muted mt-1">{t('model.backend_fixed')}</div>
               )}
             </div>
 
             {/* API Key */}
             {needsKey ? (
               <div>
-                <label className="label">API Key（留空则保留当前 key）</label>
+                <label className="label">{t('model.api_key_label')}</label>
                 <input
                   className="input"
                   type="password"
-                  placeholder={current.data?.has_api_key ? '•••••• 已保存，留空保留' : 'sk-...'}
+                  placeholder={current.data?.has_api_key ? t('model.api_key_saved_placeholder') : 'sk-...'}
                   value={form.apiKey}
                   onChange={(e) => setForm((f) => ({ ...f, apiKey: e.target.value }))}
                   autoComplete="new-password"
                 />
               </div>
             ) : (
-              <Info>该 provider 不需要 API key。</Info>
+              <Info>{t('model.no_api_key_needed')}</Info>
             )}
 
             {save.error && (
@@ -249,11 +258,11 @@ export default function ModelSettingsPage() {
                 {(save.error as unknown as ApiError).status} · {(save.error as unknown as ApiError).detail}
               </div>
             )}
-            {save.isSuccess && <div className="text-sm text-success">已保存</div>}
+            {save.isSuccess && <div className="text-sm text-success">{t('common.saved')}</div>}
 
             <div className="flex justify-end">
               <button className="btn-primary" disabled={save.isPending || !buildPayload()}>
-                {save.isPending ? '保存中…' : '保存'}
+                {save.isPending ? t('model.saving') : t('common.save')}
               </button>
             </div>
           </form>
@@ -261,6 +270,149 @@ export default function ModelSettingsPage() {
       )}
     </div>
   );
+}
+
+function ValidationResultCard({
+  result,
+  providerLabel,
+  modelId,
+}: {
+  result: ValidateResult;
+  providerLabel?: string;
+  modelId?: string;
+}) {
+  const success = result.valid && result.probe_status === 'success';
+  const copy = validationCopy(result);
+  const source = apiKeySourceLabel(result.api_key_source, result.required_env_var);
+  const provider = providerLabel ?? result.provider;
+
+  return (
+    <div
+      className={`card text-sm mb-4 border-l-4 ${
+        success ? 'border-l-success' : 'border-l-danger'
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className={`font-semibold ${success ? 'text-success' : 'text-danger'}`}>
+            {success ? t('model.connection_success') : t('model.connection_failed')}
+          </div>
+          <div className="mt-1 text-text">{copy.title}</div>
+        </div>
+        <span
+          className={`badge shrink-0 ${
+            success ? 'bg-successBg text-success' : 'bg-dangerBg text-danger'
+          }`}
+        >
+          {success ? t('model.available') : t('model.needs_action')}
+        </span>
+      </div>
+
+      <div className="mt-3 grid gap-2 text-xs text-muted sm:grid-cols-2">
+        <div>
+          {t('model.provider')}: <span className="text-text">{provider}</span>
+        </div>
+        {modelId && (
+          <div>
+            {t('model.probe_model')}<code className="font-mono text-text">{modelId}</code>
+          </div>
+        )}
+        <div className="sm:col-span-2">
+          {t('model.key_source')}<span className="text-text">{source}</span>
+        </div>
+      </div>
+
+      <div className="mt-3 text-xs text-muted">{copy.detail}</div>
+      {result.probe_message && result.probe_message !== copy.detail && (
+        <div className="mt-2 rounded border border-border bg-bg p-2 text-xs text-muted">
+          {t('model.technical_detail', { detail: result.probe_message })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ValidationErrorCard({ error }: { error: ApiError }) {
+  return (
+    <div className="card text-sm mb-4 border-l-4 border-l-danger">
+      <div className="font-semibold text-danger">{t('model.request_failed')}</div>
+      <div className="mt-1 text-text">{t('model.request_failed_desc')}</div>
+      <div className="mt-2 text-xs text-muted">
+        HTTP {error.status}：{String(error.detail)}
+      </div>
+    </div>
+  );
+}
+
+function validationCopy(result: ValidateResult): { title: string; detail: string } {
+  if (!result.probe_status) {
+    if (result.api_key_source === 'none') {
+      return {
+        title: t('model.missing_key_title'),
+        detail: result.required_env_var
+          ? t('model.missing_key_detail', { envVar: result.required_env_var })
+          : result.message,
+      };
+    }
+    return {
+      title: result.valid ? t('model.config_passed') : t('model.config_failed'),
+      detail: result.message,
+    };
+  }
+
+  switch (result.probe_status) {
+    case 'success':
+      return {
+        title: t('model.probe_success_title'),
+        detail: t('model.probe_success_detail'),
+      };
+    case 'invalid_api_key':
+      return {
+        title: t('model.invalid_key_title'),
+        detail: t('model.invalid_key_detail'),
+      };
+    case 'model_not_found':
+      return {
+        title: t('model.model_not_found_title'),
+        detail: t('model.model_not_found_detail'),
+      };
+    case 'endpoint_unreachable':
+      return {
+        title: t('model.endpoint_unreachable_title'),
+        detail: t('model.endpoint_unreachable_detail'),
+      };
+    case 'permission_denied':
+      return {
+        title: t('model.permission_denied_title'),
+        detail: t('model.permission_denied_detail'),
+      };
+    case 'timeout':
+      return {
+        title: t('model.timeout_title'),
+        detail: t('model.timeout_detail'),
+      };
+    case 'provider_error':
+      return {
+        title: t('model.provider_error_title'),
+        detail: t('model.provider_error_detail'),
+      };
+  }
+}
+
+function apiKeySourceLabel(
+  source: ValidateResult['api_key_source'],
+  envVar: string | null,
+): string {
+  switch (source) {
+    case 'user':
+      return t('model.key_source.user');
+    case 'service':
+      return envVar ? t('model.key_source.service', { envVar }) : t('model.key_source.service_generic');
+    case 'not_required':
+      return t('model.key_source.not_required');
+    case 'none':
+      return t('model.key_source.none');
+  }
 }
 
 function ModelPicker(props: {
@@ -284,12 +436,12 @@ function ModelPicker(props: {
         {list.map((m) => (
           <option key={m.id} value={m.id}>{m.label}</option>
         ))}
-        {supportsCustom && <option value={CUSTOM}>自定义…</option>}
+        {supportsCustom && <option value={CUSTOM}>{t('model.custom')}</option>}
       </select>
       {showCustom && (
         <input
           className="input mt-2 font-mono"
-          placeholder="输入模型 ID"
+          placeholder={t('model.custom_placeholder')}
           value={customValue}
           onChange={(e) => onChange(CUSTOM, e.target.value)}
         />

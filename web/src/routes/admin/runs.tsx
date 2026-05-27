@@ -5,6 +5,7 @@ import { adminApi } from '@/api/admin';
 import type { RunStatus } from '@/api/runs';
 import { Subheader, Caption } from '@/components/ui/Page';
 import { StatusBadge } from '../analysis/list';
+import { t } from '@/i18n';
 
 const STATUSES: (RunStatus | '')[] = ['', 'queued', 'running', 'succeeded', 'failed', 'cancelled'];
 
@@ -22,8 +23,8 @@ export default function AdminRunsPage() {
 
   return (
     <div>
-      <Subheader>所有分析任务</Subheader>
-      <Caption>按 user_id 或状态筛选。</Caption>
+      <Subheader>{t('nav.admin_runs')}</Subheader>
+      <Caption>{t('admin.runs.caption')}</Caption>
 
       <div className="card mb-4 flex flex-wrap gap-3 items-end">
         <div>
@@ -31,9 +32,9 @@ export default function AdminRunsPage() {
           <input className="input w-72 font-mono" value={userId} onChange={(e) => setUserId(e.target.value)} />
         </div>
         <div>
-          <label className="label">状态</label>
+          <label className="label">{t('table.status')}</label>
           <select className="input w-40" value={status} onChange={(e) => setStatus(e.target.value as any)}>
-            {STATUSES.map((s) => <option key={s} value={s}>{s || '全部'}</option>)}
+            {STATUSES.map((s) => <option key={s} value={s}>{s ? t(`status.${s}`) : t('admin.status_all')}</option>)}
           </select>
         </div>
       </div>
@@ -42,11 +43,11 @@ export default function AdminRunsPage() {
         <table className="df">
           <thead>
             <tr>
-              <th>股票代码</th>
-              <th>分析日期</th>
-              <th>状态</th>
-              <th>创建时间</th>
-              <th>完成时间</th>
+              <th>{t('table.ticker')}</th>
+              <th>{t('table.trade_date')}</th>
+              <th>{t('table.status')}</th>
+              <th>{t('table.created_at')}</th>
+              <th>{t('table.finished_at')}</th>
               <th></th>
             </tr>
           </thead>
@@ -58,11 +59,11 @@ export default function AdminRunsPage() {
                 <td><StatusBadge status={r.status} /></td>
                 <td className="text-muted">{r.created_at}</td>
                 <td className="text-muted">{r.finished_at ?? '—'}</td>
-                <td><Link to={`/analysis/${r.run_id}`} className="text-[#ff4b4b]">详情</Link></td>
+                <td><Link to={`/analysis/${r.run_id}`} className="text-[#ff4b4b]">{t('table.details')}</Link></td>
               </tr>
             ))}
             {q.data?.length === 0 && (
-              <tr><td colSpan={6} className="py-4 text-muted text-center">无匹配任务</td></tr>
+              <tr><td colSpan={6} className="py-4 text-muted text-center">{t('table.no_matches')}</td></tr>
             )}
           </tbody>
         </table>

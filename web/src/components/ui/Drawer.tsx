@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import clsx from 'clsx';
+import { t } from '@/i18n';
 
 type Props = {
   open: boolean;
@@ -47,7 +48,7 @@ export default function Drawer({ open, onClose, side = 'right', title, width = 3
       >
         <header className="h-12 shrink-0 px-4 flex items-center justify-between border-b border-border">
           <div className="font-semibold">{title}</div>
-          <button className="btn-ghost px-2 py-1" onClick={onClose} aria-label="关闭">✕</button>
+          <button className="btn-ghost px-2 py-1" onClick={onClose} aria-label={t('common.close')}>✕</button>
         </header>
         <div className="flex-1 overflow-y-auto p-4 text-sm">
           {children}

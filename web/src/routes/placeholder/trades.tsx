@@ -1,23 +1,24 @@
 import { Subheader, Info } from '@/components/ui/Page';
 import Metric, { KpiRow } from '@/components/ui/Metric';
+import { t } from '@/i18n';
 
 export default function TradesPage() {
   return (
     <div>
-      <Subheader>交易记录</Subheader>
+      <Subheader>{t('nav.trades')}</Subheader>
       <KpiRow>
-        <Metric label="总交易笔数" value="—" />
-        <Metric label="买入" value="—" />
-        <Metric label="卖出" value="—" />
-        <Metric label="已实现盈亏" value="—" />
+        <Metric label={t('trades.total')} value="—" />
+        <Metric label={t('trades.buy')} value="—" />
+        <Metric label={t('trades.sell')} value="—" />
+        <Metric label={t('trades.realized_pnl')} value="—" />
       </KpiRow>
       <div className="mt-6">
-        <Info>Phase 3 待办：<code className="font-mono">{'GET /trades · /trades/{id} · /trades/closed'}</code>。</Info>
+        <Info>{t('trades.phase3')}</Info>
       </div>
-      <Subheader>每笔交易明细</Subheader>
-      <div className="card text-muted text-sm">暂无数据</div>
-      <Subheader>已平仓交易</Subheader>
-      <div className="card text-muted text-sm">暂无数据</div>
+      <Subheader>{t('trades.details')}</Subheader>
+      <div className="card text-muted text-sm">{t('common.empty')}</div>
+      <Subheader>{t('trades.closed')}</Subheader>
+      <div className="card text-muted text-sm">{t('common.empty')}</div>
     </div>
   );
 }

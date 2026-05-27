@@ -1,6 +1,8 @@
 // Top-of-page decision card. Extracts SIGNAL / Action / Entry / Stop / Target / Horizon
 // from the reports' free-text markdown.
 
+import { t } from '@/i18n';
+
 const SIGNAL_COLORS: Record<string, { fg: string; bg: string }> = {
   BUY:         { fg: '#4CAF50', bg: '#1b2a1d' },
   OVERWEIGHT:  { fg: '#4CAF50', bg: '#1b2a1d' },
@@ -57,24 +59,24 @@ export default function DecisionCard({ inputs }: { inputs: DecisionInputs }) {
     >
       <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
         <div>
-          <div className="text-xs uppercase tracking-widest text-muted">最终信号</div>
+          <div className="text-xs uppercase tracking-widest text-muted">{t('decision.final_signal')}</div>
           <div className="text-3xl font-bold" style={{ color: color?.fg ?? '#fafafa' }}>
             {rating || '—'}
           </div>
         </div>
         {action && (
-          <Field label="交易动作" value={action} color={color?.fg} />
+          <Field label={t('decision.action')} value={action} color={color?.fg} />
         )}
-        {entry && <Field label="入场价" value={entry} />}
-        {stop  && <Field label="止损"   value={stop} />}
-        {target && <Field label="价格目标" value={target} />}
-        {size  && <Field label="仓位"   value={size} />}
-        {horiz && <Field label="周期"   value={horiz} />}
+        {entry && <Field label={t('decision.entry')} value={entry} />}
+        {stop  && <Field label={t('decision.stop')} value={stop} />}
+        {target && <Field label={t('decision.target')} value={target} />}
+        {size  && <Field label={t('decision.size')} value={size} />}
+        {horiz && <Field label={t('decision.horizon')} value={horiz} />}
       </div>
 
       {summary && (
         <div className="mt-4 pt-4 border-t border-border/40">
-          <div className="text-xs uppercase tracking-widest text-muted mb-1">摘要</div>
+          <div className="text-xs uppercase tracking-widest text-muted mb-1">{t('decision.summary')}</div>
           <div className="text-sm leading-6 text-text/90">{summary}</div>
         </div>
       )}

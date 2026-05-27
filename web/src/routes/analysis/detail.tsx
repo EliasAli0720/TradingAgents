@@ -9,6 +9,7 @@ import { StatusBadge } from './list';
 import { t } from '@/i18n';
 import DecisionCard from '@/components/run/DecisionCard';
 import AgentReportTabs, { type ReportMap } from '@/components/run/AgentReportTabs';
+import RunProgress from '@/components/run/RunProgress';
 
 export default function AnalysisDetailPage() {
   const { runId } = useParams<{ runId: string }>();
@@ -46,7 +47,7 @@ export default function AnalysisDetailPage() {
   });
 
   if (run.isLoading) return <div className="text-muted">{t('common.loading')}</div>;
-  if (run.error || !run.data) return <ErrorBox>任务不存在或无权访问</ErrorBox>;
+  if (run.error || !run.data) return <ErrorBox>{t('analysis.not_found')}</ErrorBox>;
 
   const r = run.data;
   const active = r.status === 'queued' || r.status === 'running';
@@ -58,15 +59,19 @@ export default function AnalysisDetailPage() {
 
       <div className="card flex items-center justify-between mb-4">
         <div>
-          <div className="text-sm text-muted">run_id: <span className="font-mono">{r.run_id}</span></div>
-          <div className="text-sm mt-1">
-            状态：<StatusBadge status={r.status} />
-            {r.current_step && <span className="ml-2 text-muted">step: {r.current_step}</span>}
+          <div className="text-sm text-muted">
+            {t('analysis.asset_summary', {
+              asset: r.asset_type === 'crypto' ? t('analysis.asset.crypto') : t('analysis.asset.stock'),
+              count: r.analysts.length,
+            })}
+          </div>
+          <div className="text-sm mt-1 flex items-center gap-2">
+            {t('analysis.status')}<StatusBadge status={r.status} />
           </div>
         </div>
         {canOperate && active && (
           <button className="btn-danger" disabled={cancel.isPending} onClick={() => cancel.mutate()}>
-            取消任务
+            {t('analysis.cancel_run')}
           </button>
         )}
       </div>
@@ -83,24 +88,22 @@ export default function AnalysisDetailPage() {
 
       {r.status === 'succeeded' ? (
         result.isLoading ? (
-          <div className="text-muted text-sm">加载结果…</div>
+          <div className="text-muted text-sm">{t('analysis.loading_result')}</div>
         ) : result.data ? (
           <AgentReportTabs reports={reports} />
         ) : (
-          <ErrorBox>结果加载失败</ErrorBox>
+          <ErrorBox>{t('analysis.result_failed')}</ErrorBox>
         )
       ) : (
         <>
-          <Subheader>实时事件（SSE）</Subheader>
-          <div className="card">
-            <pre className="text-xs max-h-72 overflow-auto font-mono whitespace-pre-wrap">
-{events.length === 0 ? '（等待事件…）' : events.map((e) => `${e.event}  ${JSON.stringify(e.data)}`).join('\n')}
-            </pre>
-          </div>
+          <RunProgress status={r.status} events={events} currentStep={r.current_step} />
           {r.status === 'failed' && r.error && (
             <>
-              <Subheader>失败原因</Subheader>
-              <ErrorBox><pre className="text-xs whitespace-pre-wrap">{r.error}</pre></ErrorBox>
+              <Subheader>{t('analysis.failure_reason')}</Subheader>
+              <ErrorBox>
+                <div className="text-sm">{t('analysis.failure_message')}</div>
+                <div className="text-xs text-muted mt-2 whitespace-pre-wrap">{r.error}</div>
+              </ErrorBox>
             </>
           )}
         </>

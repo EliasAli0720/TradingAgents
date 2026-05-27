@@ -20,10 +20,10 @@ export default function AppLayout() {
       <button
         className="fixed top-4 right-4 z-30 btn-ghost flex items-center gap-2 shadow-lg backdrop-blur"
         onClick={() => setSettingsOpen(true)}
-        aria-label="打开设置"
+        aria-label={t('settings.open')}
       >
         <span className="text-base leading-none">⚙</span>
-        <span>设置</span>
+        <span>{t('settings.title')}</span>
       </button>
 
       <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />

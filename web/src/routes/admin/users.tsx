@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { adminApi, type AdminUser } from '@/api/admin';
 import type { Role } from '@/api/auth';
 import { Subheader, Caption } from '@/components/ui/Page';
+import { t } from '@/i18n';
 
 export default function AdminUsersPage() {
   const qc = useQueryClient();
@@ -17,20 +18,20 @@ export default function AdminUsersPage() {
 
   return (
     <div>
-      <Subheader>用户管理</Subheader>
-      <Caption>修改角色 / 启停状态，或撤销该用户的全部会话。</Caption>
+      <Subheader>{t('nav.admin_users')}</Subheader>
+      <Caption>{t('admin.users.caption')}</Caption>
 
       {q.isLoading ? (
-        <div className="text-muted">加载中…</div>
+        <div className="text-muted">{t('common.loading')}</div>
       ) : (
         <div className="card overflow-x-auto">
           <table className="df">
             <thead>
               <tr>
-                <th>用户名</th>
-                <th>角色</th>
-                <th>启用</th>
-                <th>会话</th>
+                <th>{t('table.username')}</th>
+                <th>{t('table.role')}</th>
+                <th>{t('table.enabled')}</th>
+                <th>{t('table.sessions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -58,9 +59,9 @@ export default function AdminUsersPage() {
                   <td>
                     <button
                       className="btn-ghost text-xs"
-                      onClick={() => { if (confirm(`撤销 ${u.username} 的所有会话？`)) revoke.mutate(u.user_id); }}
+                      onClick={() => { if (confirm(t('admin.revoke_confirm', { name: u.username }))) revoke.mutate(u.user_id); }}
                     >
-                      撤销所有
+                      {t('admin.revoke_all')}
                     </button>
                   </td>
                 </tr>

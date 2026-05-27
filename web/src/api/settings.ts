@@ -23,6 +23,15 @@ export type ValidateResult = {
   required_env_var: string | null;
   api_key_source: 'user' | 'service' | 'none' | 'not_required';
   message: string;
+  probe_status?:
+    | 'success'
+    | 'invalid_api_key'
+    | 'model_not_found'
+    | 'endpoint_unreachable'
+    | 'permission_denied'
+    | 'timeout'
+    | 'provider_error';
+  probe_message?: string;
 };
 
 export type ModelChoice = { id: string; label: string };

@@ -1,25 +1,26 @@
 import { Subheader, Info } from '@/components/ui/Page';
 import Metric, { KpiRow } from '@/components/ui/Metric';
+import { t } from '@/i18n';
 
 export default function RiskPage() {
   return (
     <div>
-      <Subheader>风险监控</Subheader>
+      <Subheader>{t('nav.risk')}</Subheader>
       <KpiRow>
-        <Metric label="投资比例" value="—" />
-        <Metric label="可用现金" value="—" />
-        <Metric label="已投资金额" value="—" />
-        <Metric label="敞口" value="—" />
+        <Metric label={t('risk.investment_ratio')} value="—" />
+        <Metric label={t('risk.cash_available')} value="—" />
+        <Metric label={t('risk.invested_amount')} value="—" />
+        <Metric label={t('risk.exposure')} value="—" />
       </KpiRow>
       <div className="mt-6">
-        <Info>Phase 3 待办：<code className="font-mono">GET /risk/exposure · /risk/config</code>。</Info>
+        <Info>{t('risk.phase3')}</Info>
       </div>
-      <Subheader>熔断器</Subheader>
-      <div className="card text-muted text-sm">暂无数据</div>
-      <Subheader>总仓位敞口</Subheader>
-      <div className="card text-muted text-sm">暂无数据</div>
-      <Subheader>单票集中度</Subheader>
-      <div className="card text-muted text-sm">暂无数据</div>
+      <Subheader>{t('risk.circuit_breaker')}</Subheader>
+      <div className="card text-muted text-sm">{t('common.empty')}</div>
+      <Subheader>{t('risk.total_exposure')}</Subheader>
+      <div className="card text-muted text-sm">{t('common.empty')}</div>
+      <Subheader>{t('risk.concentration')}</Subheader>
+      <div className="card text-muted text-sm">{t('common.empty')}</div>
     </div>
   );
 }

@@ -37,7 +37,7 @@ export default function SettingsDrawer({ open, onClose }: { open: boolean; onClo
   }
 
   return (
-    <Drawer open={open} onClose={onClose} title="设置" width={360}>
+    <Drawer open={open} onClose={onClose} title={t('settings.title')} width={360}>
       {/* Language */}
       <div className="flex items-center justify-between gap-3 mb-3 flex-nowrap whitespace-nowrap">
         <span className="text-muted shrink-0">{t('app.sidebar.language')}</span>
@@ -57,13 +57,13 @@ export default function SettingsDrawer({ open, onClose }: { open: boolean; onClo
       {user ? (
         <div className="mb-3">
           <div className="text-sm">{t('app.sidebar.signed_in', { name: user.username })}</div>
-          <div className="text-xs text-muted mb-2">role: {user.role}</div>
+          <div className="text-xs text-muted mb-2">{t('settings.role', { role: user.role })}</div>
           <button className="btn-ghost btn-block" onClick={handleLogout}>
             {t('app.sidebar.logout')}
           </button>
         </div>
       ) : (
-        <div className="text-muted text-sm mb-3">未登录</div>
+        <div className="text-muted text-sm mb-3">{t('settings.not_signed_in')}</div>
       )}
 
       <div className="st-divider" />

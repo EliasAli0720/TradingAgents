@@ -1,5 +1,6 @@
 import { useAuth } from '@/hooks/useAuth';
 import type { Role } from '@/api/auth';
+import { t } from '@/i18n';
 
 export default function RequireRole({
   roles,
@@ -12,7 +13,7 @@ export default function RequireRole({
   if (!user || !roles.includes(user.role)) {
     return (
       <div className="card text-muted">
-        当前账号没有访问该页面的权限。
+        {t('settings.no_permission')}
       </div>
     );
   }

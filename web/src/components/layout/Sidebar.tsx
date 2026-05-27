@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import clsx from 'clsx';
 import { useState } from 'react';
-import { t } from '@/i18n';
+import { getLocale, t } from '@/i18n';
 
 type Item = { to: string; label: string };
 
@@ -38,7 +38,7 @@ export default function Sidebar() {
       {/* Title + refresh time */}
       <div className="font-bold">{t('app.sidebar.title')}</div>
       <div className="text-xs text-muted mb-3">
-        {t('app.sidebar.last_refresh', { time: refreshAt.toLocaleTimeString('zh-CN', { hour12: false }) })}
+        {t('app.sidebar.last_refresh', { time: refreshAt.toLocaleTimeString(getLocale(), { hour12: false }) })}
       </div>
 
       {/* Mode pill */}

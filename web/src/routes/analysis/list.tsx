@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '@/api/admin';
 import { useAuth } from '@/hooks/useAuth';
 import { Subheader, Caption, Info } from '@/components/ui/Page';
-import { t } from '@/i18n';
+import { getLocale, t } from '@/i18n';
 
 export default function AnalysisListPage() {
   const { isAdmin } = useAuth();
@@ -24,23 +24,22 @@ export default function AnalysisListPage() {
 
       {!isAdmin ? (
         <Info>
-          当前账号是 viewer / operator。后端尚未提供 <code className="font-mono">GET /runs</code>（当前用户视角）。
-          可直接通过「新建分析」创建任务并打开详情页查看进度。
+          {t('sig.viewer_notice')}
         </Info>
       ) : q.isLoading ? (
         <div className="text-muted">{t('common.loading')}</div>
       ) : q.error ? (
-        <div className="text-danger">加载失败</div>
+        <div className="text-danger">{t('common.load_failed')}</div>
       ) : (
         <div className="card overflow-x-auto">
           <table className="df">
             <thead>
               <tr>
-                <th>股票代码</th>
-                <th>分析日期</th>
-                <th>状态</th>
-                <th>创建时间</th>
-                <th>完成时间</th>
+                <th>{t('table.ticker')}</th>
+                <th>{t('table.trade_date')}</th>
+                <th>{t('table.status')}</th>
+                <th>{t('table.created_at')}</th>
+                <th>{t('table.finished_at')}</th>
                 <th></th>
               </tr>
             </thead>
@@ -52,7 +51,7 @@ export default function AnalysisListPage() {
                   <td><StatusBadge status={r.status} /></td>
                   <td className="text-muted">{fmtTime(r.created_at)}</td>
                   <td className="text-muted">{r.finished_at ? fmtTime(r.finished_at) : '—'}</td>
-                  <td><Link to={`/analysis/${r.run_id}`} className="text-[#ff4b4b]">详情</Link></td>
+                  <td><Link to={`/analysis/${r.run_id}`} className="text-[#ff4b4b]">{t('table.details')}</Link></td>
                 </tr>
               ))}
               {q.data?.length === 0 && (
@@ -67,7 +66,7 @@ export default function AnalysisListPage() {
 }
 
 function fmtTime(iso: string): string {
-  try { return new Date(iso).toLocaleString('zh-CN', { hour12: false }); } catch { return iso; }
+  try { return new Date(iso).toLocaleString(getLocale(), { hour12: false }); } catch { return iso; }
 }
 
 export function StatusBadge({ status }: { status: string }) {
@@ -78,5 +77,5 @@ export function StatusBadge({ status }: { status: string }) {
     failed: 'bg-dangerBg text-danger',
     cancelled: 'bg-warnBg text-warn',
   };
-  return <span className={`badge ${map[status] ?? 'bg-white/10'}`}>{status}</span>;
+  return <span className={`badge ${map[status] ?? 'bg-white/10'}`}>{t(`status.${status}`)}</span>;
 }

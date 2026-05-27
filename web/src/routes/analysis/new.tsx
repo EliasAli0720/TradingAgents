@@ -49,41 +49,41 @@ export default function AnalysisNewPage() {
   return (
     <div className="max-w-xl">
       <Subheader>{t('nav.analysis_new')}</Subheader>
-      <Caption>输入股票代码与日期，启动完整的多智能体分析流水线。</Caption>
+      <Caption>{t('analysis.new.caption')}</Caption>
 
       <form className="card space-y-4" onSubmit={handleSubmit((v) => m.mutate(v))}>
         <div>
-          <label className="label">股票代码</label>
+          <label className="label">{t('analysis.ticker')}</label>
           <input
             className="input font-mono"
             placeholder="AAPL"
             {...register('ticker', {
-              required: '请输入股票代码',
-              pattern: { value: /^[A-Za-z0-9._^-]{1,32}$/, message: '格式不合法' },
+              required: t('analysis.ticker.required'),
+              pattern: { value: /^[A-Za-z0-9._^-]{1,32}$/, message: t('analysis.ticker.invalid') },
             })}
           />
           {errors.ticker && <div className="text-xs text-danger mt-1">{errors.ticker.message}</div>}
         </div>
 
         <div>
-          <label className="label">分析日期</label>
+          <label className="label">{t('analysis.trade_date')}</label>
           <input type="date" className="input" max={today} {...register('trade_date', { required: true })} />
         </div>
 
         <div>
-          <label className="label">资产类型</label>
+          <label className="label">{t('analysis.asset_type')}</label>
           <div className="flex gap-6 text-sm">
             <label className="flex items-center gap-2">
-              <input type="radio" value="stock" {...register('asset_type')} /> Stock
+              <input type="radio" value="stock" {...register('asset_type')} /> {t('analysis.asset.stock')}
             </label>
             <label className="flex items-center gap-2">
-              <input type="radio" value="crypto" {...register('asset_type')} /> Crypto
+              <input type="radio" value="crypto" {...register('asset_type')} /> {t('analysis.asset.crypto')}
             </label>
           </div>
         </div>
 
         <div>
-          <label className="label">分析师</label>
+          <label className="label">{t('analysis.analysts')}</label>
           <div className="grid grid-cols-2 gap-2 text-sm">
             {ALL_ANALYSTS.map((k) => {
               const disabled = assetType === 'crypto' && k === 'fundamentals';
@@ -100,14 +100,14 @@ export default function AnalysisNewPage() {
         {error && (
           <div className="text-sm text-danger">
             {error.status} · {error.detail}
-            {error.status === 409 && <> · 先去 <a href="/settings/model" className="text-[#ff4b4b]">模型设置</a> 配置</>}
+            {error.status === 409 && <> · <a href="/settings/model" className="text-[#ff4b4b]">{t('analysis.configure_model')}</a></>}
           </div>
         )}
 
         <div className="flex justify-end gap-2">
           <button type="button" className="btn-ghost" onClick={() => nav(-1)}>{t('common.cancel')}</button>
           <button type="submit" className="btn-primary" disabled={m.isPending}>
-            {m.isPending ? '创建中…' : '运行分析'}
+            {m.isPending ? t('analysis.creating') : t('analysis.run')}
           </button>
         </div>
       </form>

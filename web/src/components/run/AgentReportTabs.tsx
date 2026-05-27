@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import clsx from 'clsx';
 import Markdown from './Markdown';
+import { t } from '@/i18n';
 
 type Tab = {
   key: string;
@@ -20,44 +21,44 @@ export default function AgentReportTabs({ reports }: { reports: ReportMap }) {
   const tabs: Tab[] = [
     {
       key: 'pm',
-      label: '🎯 组合经理',
-      desc: '最终决策者。综合所有智能体的输入与风险辩论，给出最终的交易评级。',
+      label: t('report.pm'),
+      desc: t('report.pm.desc'),
       source: s(reports, 'final_trade_decision'),
     },
     {
       key: 'market',
-      label: '📊 行情',
-      desc: '技术指标分析（MACD、RSI、布林带、均线、ATR、VWMA）。',
+      label: t('report.market'),
+      desc: t('report.market.desc'),
       source: s(reports, 'market_report'),
     },
     {
       key: 'news',
-      label: '📰 新闻',
-      desc: '全球新闻、财报与宏观经济事件。',
+      label: t('report.news'),
+      desc: t('report.news.desc'),
       source: s(reports, 'news_report'),
     },
     {
       key: 'sentiment',
-      label: '💬 情绪',
-      desc: '社交媒体与公众情绪分析。',
+      label: t('report.sentiment'),
+      desc: t('report.sentiment.desc'),
       source: s(reports, 'sentiment_report'),
     },
     {
       key: 'fundamentals',
-      label: '📈 基本面',
-      desc: '财务报表与关键比率分析。',
+      label: t('report.fundamentals'),
+      desc: t('report.fundamentals.desc'),
       source: s(reports, 'fundamentals_report'),
     },
     {
       key: 'research_mgr',
-      label: '⚖️ 研究经理',
-      desc: '裁决多空辩论，综合分析师团队报告产出投资计划。',
+      label: t('report.research_mgr'),
+      desc: t('report.research_mgr.desc'),
       source: s(reports, 'investment_plan'),
     },
     {
       key: 'trader',
-      label: '💼 交易员',
-      desc: '将投资计划转化为具体的 买入/持有/卖出 方案。',
+      label: t('report.trader'),
+      desc: t('report.trader.desc'),
       source: s(reports, 'trader_investment_plan'),
     },
   ].filter((t) => t.source && t.source.trim().length > 0);
@@ -66,7 +67,7 @@ export default function AgentReportTabs({ reports }: { reports: ReportMap }) {
   const cur = tabs.find((t) => t.key === active) ?? tabs[0];
 
   if (tabs.length === 0) {
-    return <div className="card text-muted text-sm italic">未返回任何报告。</div>;
+    return <div className="card text-muted text-sm italic">{t('report.empty')}</div>;
   }
 
   return (
