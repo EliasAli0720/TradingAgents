@@ -18,6 +18,7 @@ from tradingagents.agents.utils.news_data_tools import (
     get_insider_transactions,
     get_global_news
 )
+from tradingagents.worker.provider_limits import ProviderLimiter
 
 
 def get_language_instruction() -> str:
@@ -50,6 +51,18 @@ def build_instrument_context(ticker: str, asset_type: str = "stock") -> str:
         "preserving any exchange suffix (e.g. `.TO`, `.L`, `.HK`, `.T`, `-USD`)."
         + extra_hint
     )
+
+
+def with_provider_limit(fn, provider: str, limiter: ProviderLimiter | None):
+    if limiter is None:
+        return fn
+
+    def _wrapped(*args, **kwargs):
+        with limiter.acquire(provider):
+            return fn(*args, **kwargs)
+
+    return _wrapped
+
 
 def create_msg_delete():
     def delete_messages(state):

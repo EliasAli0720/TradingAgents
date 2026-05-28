@@ -84,6 +84,9 @@ class TradingAgentsGraph:
         # Add callbacks to kwargs if provided (passed to LLM constructor)
         if self.callbacks:
             llm_kwargs["callbacks"] = self.callbacks
+        provider_limiter = getattr(self.context, "provider_limiter", None)
+        if provider_limiter is not None:
+            llm_kwargs["provider_limiter"] = provider_limiter
 
         deep_client = create_llm_client(
             provider=self.config["llm_provider"],

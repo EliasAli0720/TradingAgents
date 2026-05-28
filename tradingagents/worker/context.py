@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from tradingagents.worker.cancellation import CancellationToken
+from tradingagents.worker.provider_limits import ProviderLimiter
 
 
 @dataclass(frozen=True)
@@ -12,3 +13,4 @@ class RunContext:
     user_id: str
     memory_store: Any | None = None
     cancellation_token: CancellationToken | None = None
+    provider_limiter: ProviderLimiter | None = None
