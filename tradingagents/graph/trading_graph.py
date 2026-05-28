@@ -4,7 +4,7 @@ import logging
 import os
 from pathlib import Path
 import json
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Dict, Any, Tuple, List, Optional
 
 import yfinance as yf
@@ -56,6 +56,7 @@ class TradingAgentsGraph:
         debug=False,
         config: Dict[str, Any] = None,
         callbacks: Optional[List] = None,
+        context: Any = None,
     ):
         """Initialize the trading agents graph and components.
 
@@ -68,6 +69,7 @@ class TradingAgentsGraph:
         self.debug = debug
         self.config = config or DEFAULT_CONFIG
         self.callbacks = callbacks or []
+        self.context = context
 
         # Update the interface's config
         set_config(self.config)
@@ -265,34 +267,53 @@ class TradingAgentsGraph:
         Trade-off: only same-ticker entries are resolved per run.  Entries for
         other tickers accumulate until that ticker is run again.
         """
-        pending = [e for e in self.memory_log.get_pending_entries() if e["ticker"] == ticker]
+        context = getattr(self, "__dict__", {}).get("context")
+        memory_store = getattr(context, "memory_store", None)
+        user_id = getattr(context, "user_id", None)
+        if memory_store is not None and user_id is not None:
+            pending = memory_store.lock_pending_for_ticker(user_id, ticker)
+        else:
+            pending = [e for e in self.memory_log.get_pending_entries() if e["ticker"] == ticker]
         if not pending:
             return
 
         benchmark = self._resolve_benchmark(ticker)
         updates = []
         for entry in pending:
+            entry_date = (
+                entry.trade_date.isoformat()
+                if hasattr(entry, "trade_date")
+                else entry["date"]
+            )
+            decision = (
+                entry.decision_markdown
+                if hasattr(entry, "decision_markdown")
+                else entry.get("decision", "")
+            )
             raw, alpha, days = self._fetch_returns(
-                ticker, entry["date"], benchmark=benchmark,
+                ticker, entry_date, benchmark=benchmark,
             )
             if raw is None:
                 continue  # price not available yet — try again next run
             reflection = self.reflector.reflect_on_final_decision(
-                final_decision=entry.get("decision", ""),
+                final_decision=decision,
                 raw_return=raw,
                 alpha_return=alpha,
                 benchmark_name=benchmark,
             )
-            updates.append({
-                "ticker": ticker,
-                "trade_date": entry["date"],
-                "raw_return": raw,
-                "alpha_return": alpha,
-                "holding_days": days,
-                "reflection": reflection,
-            })
+            if memory_store is not None and hasattr(entry, "id"):
+                memory_store.resolve_pending(entry.id, raw, alpha, days, reflection)
+            else:
+                updates.append({
+                    "ticker": ticker,
+                    "trade_date": entry_date,
+                    "raw_return": raw,
+                    "alpha_return": alpha,
+                    "holding_days": days,
+                    "reflection": reflection,
+                })
 
-        if updates:
+        if updates and memory_store is None:
             self.memory_log.batch_update_with_outcomes(updates)
 
     def propagate(self, company_name, trade_date, asset_type: str = "stock"):
@@ -339,7 +360,14 @@ class TradingAgentsGraph:
     def _run_graph(self, company_name, trade_date, asset_type: str = "stock"):
         """Execute the graph and write the resulting state to disk and memory log."""
         # Initialize state — inject memory log context for PM.
-        past_context = self.memory_log.get_past_context(company_name)
+        context = getattr(self, "__dict__", {}).get("context")
+        memory_store = getattr(context, "memory_store", None)
+        user_id = getattr(context, "user_id", None)
+        run_id = getattr(context, "run_id", None)
+        if memory_store is not None and user_id is not None:
+            past_context = memory_store.get_past_context(user_id, company_name)
+        else:
+            past_context = self.memory_log.get_past_context(company_name)
         init_agent_state = self.propagator.create_initial_state(
             company_name, trade_date, asset_type=asset_type, past_context=past_context
         )
@@ -373,11 +401,25 @@ class TradingAgentsGraph:
         self._log_state(trade_date, final_state)
 
         # Store decision for deferred reflection on the next same-ticker run.
-        self.memory_log.store_decision(
-            ticker=company_name,
-            trade_date=trade_date,
-            final_trade_decision=final_state["final_trade_decision"],
-        )
+        if memory_store is not None and user_id is not None and run_id is not None:
+            parsed_trade_date = (
+                trade_date
+                if isinstance(trade_date, date)
+                else datetime.strptime(str(trade_date), "%Y-%m-%d").date()
+            )
+            memory_store.store_decision(
+                user_id=user_id,
+                run_id=run_id,
+                ticker=company_name,
+                trade_date=parsed_trade_date,
+                decision_markdown=final_state["final_trade_decision"],
+            )
+        else:
+            self.memory_log.store_decision(
+                ticker=company_name,
+                trade_date=trade_date,
+                final_trade_decision=final_state["final_trade_decision"],
+            )
 
         # Clear checkpoint on successful completion to avoid stale state.
         if self.config.get("checkpoint_enabled"):

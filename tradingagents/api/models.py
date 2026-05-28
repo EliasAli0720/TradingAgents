@@ -8,6 +8,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Float,
     Index,
     Integer,
     String,
@@ -146,6 +147,10 @@ class AnalysisMemoryEntry(Base):
     rating: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     decision_markdown: Mapped[str] = mapped_column(Text, nullable=False)
     pending: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    raw_return: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    alpha_return: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    holding_days: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    reflection: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     __table_args__ = (

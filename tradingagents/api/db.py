@@ -104,6 +104,26 @@ def ensure_additive_schema(db_engine) -> None:
                         )
                     )
 
+    if "analysis_memory_entries" in table_names:
+        memory_columns = {
+            column["name"] for column in inspector.get_columns("analysis_memory_entries")
+        }
+        memory_additions = {
+            "raw_return": "FLOAT",
+            "alpha_return": "FLOAT",
+            "holding_days": "INTEGER",
+            "reflection": "TEXT",
+        }
+        with db_engine.begin() as connection:
+            for column_name, column_definition in memory_additions.items():
+                if column_name not in memory_columns:
+                    connection.execute(
+                        text(
+                            f"ALTER TABLE analysis_memory_entries ADD COLUMN "
+                            f"{column_name} {column_definition}"
+                        )
+                    )
+
     if "user_model_settings" not in table_names:
         return
 
