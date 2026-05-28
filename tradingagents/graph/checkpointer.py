@@ -30,6 +30,11 @@ def thread_id(ticker: str, date: str) -> str:
     return hashlib.sha256(f"{ticker.upper()}:{date}".encode()).hexdigest()[:16]
 
 
+def run_thread_id(run_id: str) -> str:
+    """Thread ID for run-scoped checkpoints."""
+    return run_id
+
+
 @contextmanager
 def get_checkpointer(data_dir: str | Path, ticker: str) -> Generator[SqliteSaver, None, None]:
     """Context manager yielding a SqliteSaver backed by a per-ticker DB."""

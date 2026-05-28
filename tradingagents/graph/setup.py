@@ -21,6 +21,7 @@ class GraphSetup:
         tool_nodes: Dict[str, ToolNode],
         conditional_logic: ConditionalLogic,
         analyst_concurrency_limit: int = 1,
+        cancellation_token: Any = None,
     ):
         """Initialize with required components."""
         self.quick_thinking_llm = quick_thinking_llm
@@ -28,6 +29,7 @@ class GraphSetup:
         self.tool_nodes = tool_nodes
         self.conditional_logic = conditional_logic
         self.analyst_concurrency_limit = analyst_concurrency_limit
+        self.cancellation_token = cancellation_token
 
     def setup_graph(
         self, selected_analysts=["market", "social", "news", "fundamentals"]
@@ -70,19 +72,19 @@ class GraphSetup:
 
         # Add analyst nodes to the graph
         for spec in plan.specs:
-            workflow.add_node(spec.agent_node, analyst_factories[spec.key]())
+            workflow.add_node(spec.agent_node, self._cancellable(spec.agent_node, analyst_factories[spec.key]()))
             workflow.add_node(spec.clear_node, create_msg_delete())
-            workflow.add_node(spec.tool_node, self.tool_nodes[spec.key])
+            workflow.add_node(spec.tool_node, self._cancellable(spec.tool_node, self.tool_nodes[spec.key]))
 
         # Add other nodes
-        workflow.add_node("Bull Researcher", bull_researcher_node)
-        workflow.add_node("Bear Researcher", bear_researcher_node)
-        workflow.add_node("Research Manager", research_manager_node)
-        workflow.add_node("Trader", trader_node)
-        workflow.add_node("Aggressive Analyst", aggressive_analyst)
-        workflow.add_node("Neutral Analyst", neutral_analyst)
-        workflow.add_node("Conservative Analyst", conservative_analyst)
-        workflow.add_node("Portfolio Manager", portfolio_manager_node)
+        workflow.add_node("Bull Researcher", self._cancellable("Bull Researcher", bull_researcher_node))
+        workflow.add_node("Bear Researcher", self._cancellable("Bear Researcher", bear_researcher_node))
+        workflow.add_node("Research Manager", self._cancellable("Research Manager", research_manager_node))
+        workflow.add_node("Trader", self._cancellable("Trader", trader_node))
+        workflow.add_node("Aggressive Analyst", self._cancellable("Aggressive Analyst", aggressive_analyst))
+        workflow.add_node("Neutral Analyst", self._cancellable("Neutral Analyst", neutral_analyst))
+        workflow.add_node("Conservative Analyst", self._cancellable("Conservative Analyst", conservative_analyst))
+        workflow.add_node("Portfolio Manager", self._cancellable("Portfolio Manager", portfolio_manager_node))
 
         # Define edges
         # Start with the first analyst
@@ -155,3 +157,16 @@ class GraphSetup:
         workflow.add_edge("Portfolio Manager", END)
 
         return workflow
+
+    def _cancellable(self, name: str, fn):
+        if self.cancellation_token is None:
+            return fn
+
+        def _wrapped(state):
+            self.cancellation_token.raise_if_cancelled()
+            result = fn(state)
+            self.cancellation_token.raise_if_cancelled()
+            return result
+
+        _wrapped.__name__ = f"cancellable_{name}"
+        return _wrapped

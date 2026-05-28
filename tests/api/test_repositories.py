@@ -380,12 +380,12 @@ def test_repository_cancels_running_run():
     session.commit()
 
     saved = repo.get_run(run.run_id)
-    assert saved.status == "cancelled"
-    assert saved.current_step == "Cancelled"
+    assert saved.status == "cancelling"
+    assert saved.current_step == "Cancelling"
     assert [event.event_type for event in repo.list_events(run.run_id)] == [
         "run_queued",
         "run_started",
-        "run_cancelled",
+        "run_cancelling",
     ]
 
 

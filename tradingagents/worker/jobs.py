@@ -10,6 +10,7 @@ from tradingagents.api.config import get_api_settings
 from tradingagents.api.repositories import AnalysisRunRepository
 from tradingagents.worker.analysis import run_tradingagents_analysis
 from tradingagents.worker.celery_app import celery_app
+from tradingagents.worker.cancellation import AnalysisCancelled
 from tradingagents.worker.heartbeat import heartbeat
 
 
@@ -98,7 +99,9 @@ def execute_analysis_run(
                     llm_config=run.llm_config,
                 )
         repo.session.refresh(run)
-        if run.status == "cancelled":
+        if run.status in {"cancelled", "cancelling"}:
+            if run.status == "cancelling":
+                repo.mark_cancelled(run_id, "analysis cancelled")
             repo.session.commit()
             return
         repo.record_progress(
@@ -118,6 +121,11 @@ def execute_analysis_run(
         for artifact in output.get("artifacts") or []:
             repo.add_artifact(run_id, artifact)
         repo.session.commit()
+    except AnalysisCancelled:
+        repo.session.rollback()
+        repo.mark_cancelled(run_id, "analysis cancelled")
+        repo.session.commit()
+        raise
     except Exception as exc:
         repo.session.rollback()
         repo.store_failure(run_id, str(exc))

@@ -425,15 +425,41 @@ class AnalysisRunRepository:
 
     def cancel_run(self, run_id: str, reason: str = "run cancelled") -> AnalysisRun:
         run = self.require_run(run_id)
+        if run.status in {"cancelled", "cancelling"}:
+            return run
+        if run.status in {"succeeded", "failed"}:
+            raise ValueError(f"Cannot cancel terminal run {run_id}")
+
+        now = utcnow()
+        if run.status in {"running", "dispatching"}:
+            run.status = "cancelling"
+            run.current_step = "Cancelling"
+            run.error = reason
+            run.updated_at = now
+            self.add_event(run_id, "run_cancelling", {"run_id": run_id, "reason": reason})
+            return run
+
+        run.status = "cancelled"
+        run.finished_at = now
+        run.current_step = "Cancelled"
+        run.error = reason
+        run.updated_at = now
+        self.add_event(run_id, "run_cancelled", {"run_id": run_id, "reason": reason})
+        return run
+
+    def mark_cancelled(self, run_id: str, reason: str = "run cancelled") -> AnalysisRun:
+        run = self.require_run(run_id)
         if run.status == "cancelled":
             return run
         if run.status in {"succeeded", "failed"}:
             raise ValueError(f"Cannot cancel terminal run {run_id}")
 
+        now = utcnow()
         run.status = "cancelled"
-        run.finished_at = utcnow()
+        run.finished_at = now
         run.current_step = "Cancelled"
         run.error = reason
+        run.updated_at = now
         self.add_event(run_id, "run_cancelled", {"run_id": run_id, "reason": reason})
         return run
 

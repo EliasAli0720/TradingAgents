@@ -301,6 +301,7 @@ def test_execute_analysis_run_does_not_overwrite_cancelled_run_after_executor_re
         "run_started",
         "run_progress",
         "run_progress",
+        "run_cancelling",
         "run_cancelled",
     ]
 

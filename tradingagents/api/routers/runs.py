@@ -107,7 +107,7 @@ def cancel_run(
 
     if task_id:
         revoke(task_id)
-    return CancelRunResponse(run_id=cancelled.run_id, status="cancelled")
+    return CancelRunResponse(run_id=cancelled.run_id, status=cancelled.status)
 
 
 @router.get("/{run_id}", response_model=RunStatusResponse)
