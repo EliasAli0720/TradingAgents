@@ -249,6 +249,73 @@ class AnalysisRunRepository:
         self.add_event(run_id, "run_started", {"run_id": run_id, "status": "running"})
         return self.require_run(run_id)
 
+    def start_dispatched_run(self, run_id: str) -> Optional[AnalysisRun]:
+        now = utcnow()
+        conditions = [AnalysisRun.run_id == run_id, AnalysisRun.status == "dispatching"]
+        if self.user_id is not None:
+            conditions.append(AnalysisRun.user_id == self.user_id)
+
+        result = self.session.execute(
+            update(AnalysisRun)
+            .where(*conditions)
+            .values(
+                status="running",
+                started_at=now,
+                heartbeat_at=now,
+                current_step="Analysis running",
+                attempt_count=AnalysisRun.attempt_count + 1,
+                updated_at=now,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        if result.rowcount != 1:
+            return None
+
+        self.add_event(run_id, "run_started", {"run_id": run_id, "status": "running"})
+        return self.require_run(run_id)
+
+    def record_heartbeat(self, run_id: str) -> Optional[AnalysisRun]:
+        run = self.get_run(run_id)
+        if run is None or run.status != "running":
+            return run
+        now = utcnow()
+        run.heartbeat_at = now
+        run.updated_at = now
+        return run
+
+    def requeue_run(self, run_id: str, reason: str) -> Optional[AnalysisRun]:
+        run = self.get_run(run_id)
+        if run is None or run.status in TERMINAL_STATUSES:
+            return run
+        now = utcnow()
+        run.status = "queued"
+        run.celery_task_id = None
+        run.dispatched_at = None
+        run.heartbeat_at = None
+        run.lease_expires_at = None
+        run.started_at = None
+        run.current_step = "Queued for retry"
+        run.error = None
+        run.updated_at = now
+        self.add_event(run_id, "run_requeued", {"run_id": run_id, "reason": reason})
+        return run
+
+    def fail_run(self, run_id: str, error: str) -> Optional[AnalysisRun]:
+        run = self.get_run(run_id)
+        if run is None:
+            return None
+        if run.status in {"succeeded", "cancelled"}:
+            raise ValueError(f"Cannot mark {run.status} run {run_id} as failed")
+
+        now = utcnow()
+        run.status = "failed"
+        run.finished_at = now
+        run.current_step = "Failed"
+        run.error = error
+        run.updated_at = now
+        self.add_event(run_id, "run_failed", {"run_id": run_id, "error": error})
+        return run
+
     def record_progress(
         self,
         run_id: str,

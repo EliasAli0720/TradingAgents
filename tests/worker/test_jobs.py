@@ -1,7 +1,7 @@
 import json
 import subprocess
 import sys
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from sqlalchemy.orm import sessionmaker
@@ -9,6 +9,7 @@ from sqlalchemy.orm import sessionmaker
 from tradingagents.api.db import Base, create_db_engine
 from tradingagents.api.crypto import encrypt_secret
 from tradingagents.api.repositories import AnalysisRunRepository
+from tradingagents.api.repositories import utcnow
 from tradingagents.api.serialization import extract_reports, json_safe_state
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.worker.analysis import run_tradingagents_analysis
@@ -25,6 +26,13 @@ def _repo():
     Session = sessionmaker(bind=engine, future=True)
     session = Session()
     return session, AnalysisRunRepository(session)
+
+
+def _dispatch_run(repo: AnalysisRunRepository, run_id: str) -> None:
+    repo.claim_next_queued_for_dispatch(
+        user_id=repo.require_run(run_id).user_id,
+        lease_expires_at=utcnow() + timedelta(seconds=600),
+    )
 
 
 LLM_CONFIG = {
@@ -88,6 +96,7 @@ def test_execute_analysis_run_success_writes_result():
     run = repo.create_run(
         "NVDA", date(2026, 1, 15), "stock", ["market"], llm_config=LLM_CONFIG
     )
+    _dispatch_run(repo, run.run_id)
     session.commit()
     calls = []
 
@@ -107,6 +116,7 @@ def test_execute_analysis_run_success_writes_result():
     assert calls == [("NVDA", date(2026, 1, 15), "stock", ["market"], LLM_CONFIG)]
     assert [event.event_type for event in repo.list_events(run.run_id)] == [
         "run_queued",
+        "run_dispatching",
         "run_started",
         "run_progress",
         "run_progress",
@@ -115,11 +125,30 @@ def test_execute_analysis_run_success_writes_result():
     ]
 
 
+def test_execute_analysis_run_requires_dispatched_run():
+    session, repo = _repo()
+    run = repo.create_run(
+        "NVDA", date(2026, 1, 15), "stock", ["market"], llm_config=LLM_CONFIG
+    )
+    session.commit()
+
+    execute_analysis_run(
+        repo,
+        run.run_id,
+        lambda *args: {"decision": "Hold", "reports": {}, "final_state": {}},
+    )
+    session.commit()
+
+    assert repo.get_run(run.run_id).status == "queued"
+    assert repo.get_result(run.run_id) is None
+
+
 def test_execute_analysis_run_emits_user_friendly_progress_events():
     session, repo = _repo()
     run = repo.create_run(
         "NVDA", date(2026, 1, 15), "stock", ["market"], llm_config=LLM_CONFIG
     )
+    _dispatch_run(repo, run.run_id)
     session.commit()
 
     def fake_executor(ticker, trade_date, asset_type, analysts, llm_config):
@@ -143,6 +172,7 @@ def test_execute_analysis_run_emits_user_friendly_progress_events():
     assert all(event.payload["message"] for event in progress_events)
     assert [event.event_type for event in events] == [
         "run_queued",
+        "run_dispatching",
         "run_started",
         "run_progress",
         "run_progress",
@@ -157,6 +187,7 @@ def test_execute_analysis_run_failure_writes_error():
     run = repo.create_run(
         "NVDA", date(2026, 1, 15), "stock", ["market"], llm_config=LLM_CONFIG
     )
+    _dispatch_run(repo, run.run_id)
     session.commit()
 
     def fake_executor(ticker, trade_date, asset_type, analysts, llm_config):
@@ -189,6 +220,7 @@ def test_execute_analysis_run_claims_queued_run_once():
 def test_execute_analysis_run_without_model_config_marks_failed():
     session, repo = _repo()
     run = repo.create_run("NVDA", date(2026, 1, 15), "stock", ["market"])
+    _dispatch_run(repo, run.run_id)
     session.commit()
 
     def fake_executor(ticker, trade_date, asset_type, analysts, llm_config):
@@ -208,6 +240,7 @@ def test_execute_analysis_run_does_not_overwrite_cancelled_run_after_executor_re
     run = repo.create_run(
         "NVDA", date(2026, 1, 15), "stock", ["market"], llm_config=LLM_CONFIG
     )
+    _dispatch_run(repo, run.run_id)
     session.commit()
 
     def fake_executor(ticker, trade_date, asset_type, analysts, llm_config):
@@ -227,6 +260,7 @@ def test_execute_analysis_run_does_not_overwrite_cancelled_run_after_executor_re
     assert repo.get_result(run.run_id) is None
     assert [event.event_type for event in repo.list_events(run.run_id)] == [
         "run_queued",
+        "run_dispatching",
         "run_started",
         "run_progress",
         "run_progress",
