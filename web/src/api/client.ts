@@ -43,6 +43,10 @@ http.interceptors.response.use(
   },
 );
 
-export function sseUrl(path: string): string {
+export function apiUrl(path: string): string {
   return `${BASE}${path}`;
+}
+
+export function sseUrl(path: string): string {
+  return apiUrl(path);
 }

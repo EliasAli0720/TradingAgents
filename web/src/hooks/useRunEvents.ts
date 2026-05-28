@@ -20,9 +20,12 @@ export function useRunEvents(runId: string | undefined): {
 
     const handlers = [
       'run_queued',
+      'run_dispatching',
       'run_started',
+      'run_requeued',
       'agent_step',
       'run_progress',
+      'run_cancelling',
       'run_succeeded',
       'run_failed',
       'run_cancelled',

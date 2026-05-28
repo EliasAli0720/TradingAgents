@@ -7,7 +7,7 @@ import { Subheader, Caption } from '@/components/ui/Page';
 import { StatusBadge } from '../analysis/list';
 import { t } from '@/i18n';
 
-const STATUSES: (RunStatus | '')[] = ['', 'queued', 'running', 'succeeded', 'failed', 'cancelled'];
+const STATUSES: (RunStatus | '')[] = ['', 'queued', 'dispatching', 'running', 'cancelling', 'succeeded', 'failed', 'cancelled'];
 
 export default function AdminRunsPage() {
   const [userId, setUserId] = useState('');

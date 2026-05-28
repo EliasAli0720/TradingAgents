@@ -1,6 +1,6 @@
-import { http } from './client';
+import { apiUrl, http } from './client';
 
-export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+export type RunStatus = 'queued' | 'dispatching' | 'running' | 'cancelling' | 'succeeded' | 'failed' | 'cancelled';
 export type AssetType = 'stock' | 'crypto';
 export type AnalystKey = 'market' | 'social' | 'news' | 'fundamentals';
 
@@ -23,6 +23,7 @@ export type RunSummary = {
   started_at: string | null;
   finished_at: string | null;
   error: string | null;
+  queue_position: number | null;
 };
 
 export type RunResult = {
@@ -34,8 +35,22 @@ export type RunResult = {
   created_at: string;
 };
 
+export type RunArtifact = {
+  artifact_id: string;
+  kind: string;
+  content_type: string | null;
+  size_bytes: number;
+  created_at: string;
+};
+
+export type CreateRunResponse = {
+  run_id: string;
+  status: RunStatus;
+  queue_position: number | null;
+};
+
 export const runsApi = {
-  async create(input: CreateRunInput): Promise<{ run_id: string; status: RunStatus }> {
+  async create(input: CreateRunInput): Promise<CreateRunResponse> {
     const { data } = await http.post('/runs', input);
     return data;
   },
@@ -50,5 +65,12 @@ export const runsApi = {
   async cancel(runId: string): Promise<{ run_id: string; status: RunStatus }> {
     const { data } = await http.post(`/runs/${runId}/cancel`);
     return data;
+  },
+  async artifacts(runId: string): Promise<RunArtifact[]> {
+    const { data } = await http.get<RunArtifact[]>(`/runs/${runId}/artifacts`);
+    return data;
+  },
+  artifactUrl(runId: string, artifactId: string): string {
+    return apiUrl(`/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(artifactId)}`);
   },
 };

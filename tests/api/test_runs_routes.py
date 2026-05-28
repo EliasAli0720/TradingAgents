@@ -174,7 +174,9 @@ def test_get_run_returns_status():
 
     response = client.get(f"/runs/{run_id}")
     assert response.status_code == 200
-    assert response.json()["ticker"] == "NVDA"
+    body = response.json()
+    assert body["ticker"] == "NVDA"
+    assert body["queue_position"] == 1
 
 
 def test_get_run_returns_dispatching_status():

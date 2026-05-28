@@ -72,7 +72,9 @@ function fmtTime(iso: string): string {
 export function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
     queued: 'bg-neutralBg text-muted',
+    dispatching: 'bg-infoBg text-info',
     running: 'bg-infoBg text-info',
+    cancelling: 'bg-warnBg text-warn',
     succeeded: 'bg-successBg text-success',
     failed: 'bg-dangerBg text-danger',
     cancelled: 'bg-warnBg text-warn',

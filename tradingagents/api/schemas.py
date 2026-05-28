@@ -84,6 +84,7 @@ class RunStatusResponse(BaseModel):
     started_at: Optional[datetime]
     finished_at: Optional[datetime]
     error: Optional[str]
+    queue_position: Optional[int] = None
 
 
 class RunResultResponse(BaseModel):

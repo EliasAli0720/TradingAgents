@@ -11,6 +11,8 @@ import DecisionCard from '@/components/run/DecisionCard';
 import AgentReportTabs, { type ReportMap } from '@/components/run/AgentReportTabs';
 import RunProgress from '@/components/run/RunProgress';
 
+const LIVE_STATUSES = new Set(['queued', 'dispatching', 'running', 'cancelling']);
+
 export default function AnalysisDetailPage() {
   const { runId } = useParams<{ runId: string }>();
   const qc = useQueryClient();
@@ -22,7 +24,7 @@ export default function AnalysisDetailPage() {
     enabled: !!runId,
     refetchInterval: (q) => {
       const s = q.state.data?.status;
-      return s && (s === 'queued' || s === 'running') ? 3000 : false;
+      return s && LIVE_STATUSES.has(s) ? 3000 : false;
     },
   });
 
@@ -32,12 +34,19 @@ export default function AnalysisDetailPage() {
     if (terminated) {
       qc.invalidateQueries({ queryKey: ['run', runId] });
       qc.invalidateQueries({ queryKey: ['runResult', runId] });
+      qc.invalidateQueries({ queryKey: ['runArtifacts', runId] });
     }
   }, [terminated, qc, runId]);
 
   const result = useQuery({
     queryKey: ['runResult', runId],
     queryFn: () => runsApi.result(runId!),
+    enabled: !!runId && run.data?.status === 'succeeded',
+  });
+
+  const artifacts = useQuery({
+    queryKey: ['runArtifacts', runId],
+    queryFn: () => runsApi.artifacts(runId!),
     enabled: !!runId && run.data?.status === 'succeeded',
   });
 
@@ -50,7 +59,7 @@ export default function AnalysisDetailPage() {
   if (run.error || !run.data) return <ErrorBox>{t('analysis.not_found')}</ErrorBox>;
 
   const r = run.data;
-  const active = r.status === 'queued' || r.status === 'running';
+  const cancellable = r.status === 'queued' || r.status === 'dispatching' || r.status === 'running';
   const reports = (result.data?.reports ?? {}) as ReportMap;
 
   return (
@@ -69,7 +78,7 @@ export default function AnalysisDetailPage() {
             {t('analysis.status')}<StatusBadge status={r.status} />
           </div>
         </div>
-        {canOperate && active && (
+        {canOperate && cancellable && (
           <button className="btn-danger" disabled={cancel.isPending} onClick={() => cancel.mutate()}>
             {t('analysis.cancel_run')}
           </button>
@@ -86,6 +95,10 @@ export default function AnalysisDetailPage() {
         />
       )}
 
+      {r.status === 'succeeded' && (
+        <ArtifactList runId={r.run_id} artifacts={artifacts.data ?? []} loading={artifacts.isLoading} error={artifacts.isError} />
+      )}
+
       {r.status === 'succeeded' ? (
         result.isLoading ? (
           <div className="text-muted text-sm">{t('analysis.loading_result')}</div>
@@ -96,7 +109,7 @@ export default function AnalysisDetailPage() {
         )
       ) : (
         <>
-          <RunProgress status={r.status} events={events} currentStep={r.current_step} />
+          <RunProgress status={r.status} events={events} currentStep={r.current_step} queuePosition={r.queue_position} />
           {r.status === 'failed' && r.error && (
             <>
               <Subheader>{t('analysis.failure_reason')}</Subheader>
@@ -110,4 +123,52 @@ export default function AnalysisDetailPage() {
       )}
     </div>
   );
+}
+
+function ArtifactList({
+  runId,
+  artifacts,
+  loading,
+  error,
+}: {
+  runId: string;
+  artifacts: { artifact_id: string; kind: string; content_type: string | null; size_bytes: number; created_at: string }[];
+  loading: boolean;
+  error: boolean;
+}) {
+  if (loading) return <div className="card mb-4 text-sm text-muted">{t('common.loading')}</div>;
+  if (error) return <ErrorBox>{t('analysis.artifacts_failed')}</ErrorBox>;
+
+  return (
+    <div className="card mb-4">
+      <div className="text-sm font-semibold mb-3">{t('analysis.artifacts')}</div>
+      {artifacts.length === 0 ? (
+        <div className="text-sm text-muted">{t('analysis.artifacts_empty')}</div>
+      ) : (
+        <div className="space-y-2">
+          {artifacts.map((artifact) => (
+            <a
+              key={artifact.artifact_id}
+              className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border px-3 py-2 hover:border-[#ff4b4b]/70"
+              href={runsApi.artifactUrl(runId, artifact.artifact_id)}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <span>
+                <span className="font-medium">{artifact.kind}</span>
+                <span className="ml-2 text-xs text-muted font-mono">{artifact.artifact_id}</span>
+              </span>
+              <span className="text-xs text-muted">{formatBytes(artifact.size_bytes)}</span>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }

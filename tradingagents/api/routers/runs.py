@@ -37,6 +37,26 @@ from tradingagents.api.schemas import (
 router = APIRouter(prefix="/runs", tags=["runs"])
 
 
+def _run_status_response(
+    repo: AnalysisRunRepository,
+    run,
+) -> RunStatusResponse:
+    return RunStatusResponse(
+        run_id=run.run_id,
+        status=run.status,
+        ticker=run.ticker,
+        trade_date=run.trade_date,
+        asset_type=run.asset_type,
+        analysts=list(run.analysts or []),
+        current_step=run.current_step,
+        created_at=run.created_at,
+        started_at=run.started_at,
+        finished_at=run.finished_at,
+        error=run.error,
+        queue_position=repo.queue_position(run.run_id),
+    )
+
+
 def _user_capacity_lock_stmt(user_id: str):
     return select(User.user_id).where(User.user_id == user_id).with_for_update()
 
@@ -127,7 +147,7 @@ def get_run(
     run = repo.get_run(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="run not found")
-    return run
+    return _run_status_response(repo, run)
 
 
 @router.get("/{run_id}/result", response_model=RunResultResponse)

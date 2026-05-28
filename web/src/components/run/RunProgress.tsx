@@ -11,6 +11,7 @@ type Stage = {
 
 const STAGES: Stage[] = [
   { key: 'queued', labelKey: 'run.stage.queued', percent: 5 },
+  { key: 'dispatching', labelKey: 'run.stage.dispatching', percent: 10 },
   { key: 'preparing', labelKey: 'run.stage.preparing', percent: 15 },
   { key: 'analyzing', labelKey: 'run.stage.analyzing', percent: 35 },
   { key: 'saving', labelKey: 'run.stage.saving', percent: 85 },
@@ -19,11 +20,13 @@ const STAGES: Stage[] = [
 
 const DEFAULT_MESSAGES: Record<string, string> = {
   queued: 'run.message.queued',
+  dispatching: 'run.message.dispatching',
   preparing: 'run.message.preparing',
   analyzing: 'run.message.analyzing',
   saving: 'run.message.saving',
   completed: 'run.message.completed',
   failed: 'run.message.failed',
+  cancelling: 'run.message.cancelling',
   cancelled: 'run.message.cancelled',
 };
 
@@ -31,10 +34,12 @@ export default function RunProgress({
   status,
   events,
   currentStep,
+  queuePosition,
 }: {
   status: RunStatus;
   events: RunEvent[];
   currentStep?: string | null;
+  queuePosition?: number | null;
 }) {
   const latestProgress = [...events]
     .reverse()
@@ -42,7 +47,7 @@ export default function RunProgress({
   const payload = latestProgress && isProgressPayload(latestProgress.data) ? latestProgress.data : null;
   const phase = resolvePhase(status, payload?.phase);
   const percent = resolvePercent(status, phase, payload?.percent);
-  const message = resolveMessage(status, payload?.message, currentStep, phase);
+  const message = resolveMessage(status, payload?.message, currentStep, phase, queuePosition);
   const activeIndex = STAGES.findIndex((stage) => stage.key === phase);
 
   return (
@@ -59,16 +64,16 @@ export default function RunProgress({
         <div
           className={clsx(
             'h-full transition-all duration-500',
-            status === 'failed' ? 'bg-danger' : status === 'cancelled' ? 'bg-muted' : 'bg-[#ff4b4b]',
+            status === 'failed' ? 'bg-danger' : status === 'cancelled' ? 'bg-muted' : status === 'cancelling' ? 'bg-warn' : 'bg-[#ff4b4b]',
           )}
           style={{ width: `${percent}%` }}
         />
       </div>
 
-      <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-2">
+      <div className="mt-4 grid grid-cols-2 md:grid-cols-6 gap-2">
         {STAGES.map((stage, index) => {
           const done = status === 'succeeded' || (activeIndex >= 0 && index <= activeIndex);
-          const active = stage.key === phase && status !== 'succeeded';
+          const active = stage.key === phase && !['succeeded', 'failed', 'cancelled'].includes(status);
           return (
             <div
               key={stage.key}
@@ -102,6 +107,8 @@ function resolvePhase(status: RunStatus, phase: string | undefined): string {
   if (status === 'succeeded') return 'completed';
   if (phase && STAGES.some((stage) => stage.key === phase)) return phase;
   if (status === 'failed' || status === 'cancelled') return 'analyzing';
+  if (status === 'cancelling') return 'analyzing';
+  if (status === 'dispatching') return 'dispatching';
   if (status === 'running') return 'analyzing';
   return 'queued';
 }
@@ -109,6 +116,7 @@ function resolvePhase(status: RunStatus, phase: string | undefined): string {
 function resolvePercent(status: RunStatus, phase: string, percent: number | undefined): number {
   if (status === 'succeeded') return 100;
   if (status === 'failed' || status === 'cancelled') return percent ?? STAGES.find((stage) => stage.key === phase)?.percent ?? 0;
+  if (status === 'cancelling') return percent ?? STAGES.find((stage) => stage.key === phase)?.percent ?? 0;
   if (typeof percent === 'number') return Math.max(0, Math.min(99, Math.round(percent)));
   return STAGES.find((stage) => stage.key === phase)?.percent ?? 0;
 }
@@ -118,17 +126,24 @@ function resolveMessage(
   message: string | undefined,
   currentStep: string | null | undefined,
   phase: string,
+  queuePosition: number | null | undefined,
 ): string {
   if (status === 'failed') return t(DEFAULT_MESSAGES.failed);
+  if (status === 'cancelling') return t(DEFAULT_MESSAGES.cancelling);
   if (status === 'cancelled') return t(DEFAULT_MESSAGES.cancelled);
   if (message) return message;
   if (currentStep) return currentStep;
+  if (status === 'queued' && typeof queuePosition === 'number') {
+    return t('run.message.queued_position', { position: queuePosition });
+  }
   return t(DEFAULT_MESSAGES[phase] ?? DEFAULT_MESSAGES.analyzing);
 }
 
 function titleForStatus(status: RunStatus): string {
   if (status === 'queued') return t('run.title.queued');
+  if (status === 'dispatching') return t('run.title.dispatching');
   if (status === 'running') return t('run.title.running');
+  if (status === 'cancelling') return t('run.title.cancelling');
   if (status === 'succeeded') return t('run.title.succeeded');
   if (status === 'failed') return t('run.title.failed');
   return t('run.title.cancelled');
