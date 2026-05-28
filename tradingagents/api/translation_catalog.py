@@ -32,17 +32,24 @@ TRANSLATION_PROVIDERS: list[TranslationProviderOption] = [
     ),
     TranslationProviderOption(
         provider_id="deepseek",
+        # Official DeepSeek API exposes V3 via the model id "deepseek-chat"
+        # (now backed by V3.2). There is no "deepseek-v3" id. OpenAI-compatible
+        # endpoint; the SDK appends /chat/completions to this base.
         label="DeepSeek",
         model_id="deepseek-chat",
-        model_label="DeepSeek V3",
+        model_label="DeepSeek V3.2 (deepseek-chat)",
         default_backend_url="https://api.deepseek.com",
     ),
     TranslationProviderOption(
         provider_id="google",
+        # Native Gemini Developer API via langchain_google_genai. Leave the
+        # base URL empty: the SDK targets generativelanguage.googleapis.com and
+        # appends /v1beta/models/... itself. Passing a /v1beta-suffixed URL
+        # double-prefixes the path and 404s.
         label="Google",
         model_id="gemini-2.5-pro",
         model_label="Gemini 2.5 Pro",
-        default_backend_url="https://generativelanguage.googleapis.com/v1beta",
+        default_backend_url=None,
     ),
 ]
 

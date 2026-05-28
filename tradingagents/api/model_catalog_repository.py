@@ -25,7 +25,9 @@ PROVIDER_SEEDS = [
     ProviderSeed("openai", "OpenAI", "https://api.openai.com/v1"),
     # google: Gemini Developer API endpoint per ai.google.dev/api.
     # Honored by langchain_google_genai when base_url is passed through.
-    ProviderSeed("google", "Google", "https://generativelanguage.googleapis.com/v1beta"),
+    # Native Gemini SDK appends /v1beta/models/... itself; a /v1beta-suffixed
+    # base URL double-prefixes and 404s, so leave it unset (SDK default).
+    ProviderSeed("google", "Google", None),
     # anthropic: official default per langchain_anthropic.ChatAnthropic
     # (anthropic_api_url alias 'base_url'). No /v1 suffix — the Anthropic
     # SDK appends versioned paths itself.
