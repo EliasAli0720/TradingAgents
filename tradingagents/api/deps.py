@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Iterator
 
 from fastapi import Depends, HTTPException, Request
@@ -8,6 +9,7 @@ from sqlalchemy.orm import Session
 from tradingagents.api.auth_repository import SessionRepository, UserRepository
 from tradingagents.api.config import get_api_settings
 from tradingagents.api.db import SessionLocal, get_session
+from tradingagents.api.events import RunEventPublisher
 from tradingagents.api.models import User
 from tradingagents.api.model_probe import probe_model
 from tradingagents.api.rate_limit import InMemoryBackend, SlidingWindow
@@ -16,6 +18,7 @@ from tradingagents.worker.jobs import run_analysis_task
 
 
 _login_limiter: SlidingWindow | None = None
+_redis_client = None
 
 
 def get_login_rate_limiter() -> SlidingWindow:
@@ -66,6 +69,23 @@ def get_stream_session_factory():
     return SessionLocal
 
 
+def get_redis_client():
+    if os.environ.get("TRADINGAGENTS_API_ENV") == "test":
+        return None
+    global _redis_client
+    if _redis_client is None:
+        import redis
+
+        _redis_client = redis.Redis.from_url(get_api_settings().redis_url)
+    return _redis_client
+
+
+def get_run_event_publisher(redis_client=Depends(get_redis_client)):
+    if redis_client is None:
+        return None
+    return RunEventPublisher(redis_client)
+
+
 def get_current_user(
     request: Request,
     session: Session = Depends(get_db_session),
@@ -104,6 +124,7 @@ def require_role(*roles: str):
 def get_scoped_repository(
     session: Session = Depends(get_db_session),
     user: User = Depends(get_current_user),
+    event_publisher=Depends(get_run_event_publisher),
 ) -> AnalysisRunRepository:
     user_id = None if user.role == "admin" else user.user_id
-    return AnalysisRunRepository(session, user_id=user_id)
+    return AnalysisRunRepository(session, user_id=user_id, event_publisher=event_publisher)

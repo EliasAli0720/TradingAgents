@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import logging
+from dataclasses import asdict, is_dataclass
 from datetime import date, datetime, timezone
 from typing import Any, Optional
-from dataclasses import asdict, is_dataclass
 from uuid import uuid4
 
 from sqlalchemy import and_, func, or_, select, update
@@ -14,6 +15,8 @@ from tradingagents.api.models import (
     AnalysisRunEvent,
     AnalysisRunResult,
 )
+
+logger = logging.getLogger(__name__)
 
 
 ACTIVE_STATUSES = {"dispatching", "running"}
@@ -29,9 +32,15 @@ def new_run_id() -> str:
 
 
 class AnalysisRunRepository:
-    def __init__(self, session: Session, user_id: Optional[str] = None):
+    def __init__(
+        self,
+        session: Session,
+        user_id: Optional[str] = None,
+        event_publisher: Any = None,
+    ):
         self.session = session
         self.user_id = user_id
+        self.event_publisher = event_publisher
 
     def create_run(
         self,
@@ -476,6 +485,16 @@ class AnalysisRunRepository:
             created_at=utcnow(),
         )
         self.session.add(event)
+        if self.event_publisher is not None:
+            try:
+                self.event_publisher.publish(run_id, event_type, payload)
+            except Exception as exc:
+                logger.warning(
+                    "failed to publish run event %s for %s: %s",
+                    event_type,
+                    run_id,
+                    exc,
+                )
         return event
 
     def list_events(self, run_id: str, after_id: int = 0) -> list[AnalysisRunEvent]:

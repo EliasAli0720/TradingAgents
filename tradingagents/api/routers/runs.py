@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -14,11 +14,14 @@ from tradingagents.api.model_settings_repository import UserModelSettingsReposit
 from tradingagents.api.deps import (
     get_current_user,
     get_db_session,
+    get_redis_client,
+    get_run_event_publisher,
     get_scoped_repository,
     get_stream_session_factory,
     get_task_revoke,
     require_role,
 )
+from tradingagents.api.events import parse_published_event
 from tradingagents.api.models import User
 from tradingagents.api.repositories import AnalysisRunRepository
 from tradingagents.api.schemas import (
@@ -46,6 +49,7 @@ def create_run(
     request: CreateRunRequest,
     session: Session = Depends(get_db_session),
     user: User = Depends(require_role("admin", "operator")),
+    event_publisher=Depends(get_run_event_publisher),
 ):
     llm_config = UserModelSettingsRepository(session).snapshot(user.user_id)
     if llm_config is None:
@@ -68,7 +72,11 @@ def create_run(
             detail="too many queued analysis runs",
         )
 
-    repo = AnalysisRunRepository(session, user_id=user.user_id)
+    repo = AnalysisRunRepository(
+        session,
+        user_id=user.user_id,
+        event_publisher=event_publisher,
+    )
     run = repo.create_run(
         ticker=request.ticker,
         trade_date=request.trade_date,
@@ -151,6 +159,8 @@ async def stream_events(
     run_id: str,
     user: User = Depends(get_current_user),
     stream_session_factory=Depends(get_stream_session_factory),
+    redis_client=Depends(get_redis_client),
+    last_event_id: int | None = Header(default=None, alias="Last-Event-ID"),
 ):
     scope_user_id = None if user.role == "admin" else user.user_id
 
@@ -161,7 +171,7 @@ async def stream_events(
             raise HTTPException(status_code=404, detail="run not found")
 
     async def event_generator():
-        last_id = 0
+        last_id = last_event_id or 0
         terminal = False
         while not terminal:
             with stream_session_factory() as stream_session:
@@ -184,6 +194,26 @@ async def stream_events(
                         "run_cancelled",
                     }:
                         terminal = True
+            if not terminal and redis_client is not None:
+                pubsub = redis_client.pubsub()
+                pubsub.subscribe(f"run:{run_id}")
+                try:
+                    message = pubsub.get_message(
+                        ignore_subscribe_messages=True,
+                        timeout=1,
+                    )
+                    published = parse_published_event(message) if message else None
+                    if published is not None:
+                        yield f"event: {published.event_type}\n"
+                        yield f"data: {json.dumps(published.payload)}\n\n"
+                        if published.event_type in {
+                            "run_succeeded",
+                            "run_failed",
+                            "run_cancelled",
+                        }:
+                            terminal = True
+                finally:
+                    pubsub.close()
             if not terminal:
                 await asyncio.sleep(1)
 
