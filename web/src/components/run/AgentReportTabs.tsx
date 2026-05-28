@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import clsx from 'clsx';
 import Markdown from './Markdown';
-import { t } from '@/i18n';
+import { t, getLang } from '@/i18n';
 
 type Tab = {
   key: string;
@@ -17,49 +17,65 @@ function s(reports: ReportMap, key: string): string {
   return typeof v === 'string' ? v : '';
 }
 
-export default function AgentReportTabs({ reports }: { reports: ReportMap }) {
+// Prefer the current-language translation; fall back to the English original.
+function pick(reports: ReportMap, translated: ReportMap | undefined, key: string): string {
+  if (translated) {
+    const tv = translated[key];
+    if (typeof tv === 'string' && tv.trim()) return tv;
+  }
+  return s(reports, key);
+}
+
+export default function AgentReportTabs({
+  reports,
+  reportsI18n,
+}: {
+  reports: ReportMap;
+  reportsI18n?: Record<string, ReportMap> | null;
+}) {
+  const translated = reportsI18n?.[getLang()];
   const tabs: Tab[] = [
     {
       key: 'pm',
       label: t('report.pm'),
       desc: t('report.pm.desc'),
-      source: s(reports, 'final_trade_decision'),
+      source: pick(reports, translated, 'final_trade_decision'),
     },
     {
       key: 'market',
       label: t('report.market'),
       desc: t('report.market.desc'),
-      source: s(reports, 'market_report'),
+      source: pick(reports, translated, 'market_report'),
     },
     {
       key: 'news',
       label: t('report.news'),
       desc: t('report.news.desc'),
-      source: s(reports, 'news_report'),
+      source: pick(reports, translated, 'news_report'),
     },
     {
       key: 'sentiment',
       label: t('report.sentiment'),
       desc: t('report.sentiment.desc'),
-      source: s(reports, 'sentiment_report'),
+      source: pick(reports, translated, 'sentiment_report'),
     },
     {
       key: 'fundamentals',
       label: t('report.fundamentals'),
       desc: t('report.fundamentals.desc'),
-      source: s(reports, 'fundamentals_report'),
+      source: pick(reports, translated, 'fundamentals_report'),
     },
     {
       key: 'research_mgr',
       label: t('report.research_mgr'),
       desc: t('report.research_mgr.desc'),
-      source: s(reports, 'investment_plan'),
+      source: pick(reports, translated, 'investment_plan'),
     },
     {
       key: 'trader',
       label: t('report.trader'),
       desc: t('report.trader.desc'),
-      source: s(reports, 'trader_investment_plan'),
+      source: pick(reports, translated, 'trader_investment_plan'),
     },
   ].filter((t) => t.source && t.source.trim().length > 0);
 

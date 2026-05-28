@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { useAuth } from '@/hooks/useAuth';
-import { authApi } from '@/api/auth';
+import { authApi, type Language } from '@/api/auth';
 import { t, getLang, setLang } from '@/i18n';
 import Drawer from '@/components/ui/Drawer';
 
@@ -36,6 +36,12 @@ export default function SettingsDrawer({ open, onClose }: { open: boolean; onClo
     nav('/login', { replace: true });
   }
 
+  async function handleLanguageChange(next: Language) {
+    // Persist to DB first (source of truth); setLang reloads to re-render.
+    try { await authApi.setPreferences(next); } catch {}
+    setLang(next);
+  }
+
   return (
     <Drawer open={open} onClose={onClose} title={t('settings.title')} width={360}>
       {/* Language */}
@@ -44,7 +50,7 @@ export default function SettingsDrawer({ open, onClose }: { open: boolean; onClo
         <select
           className="input w-32 py-1 shrink-0"
           value={lang}
-          onChange={(e) => setLang(e.target.value as 'zh' | 'en')}
+          onChange={(e) => handleLanguageChange(e.target.value as Language)}
         >
           <option value="zh">中文</option>
           <option value="en">English</option>

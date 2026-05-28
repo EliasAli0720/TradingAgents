@@ -129,6 +129,7 @@ const DICT: Record<string, { zh: string; en: string }> = {
   'report.trader':             { zh: '💼 交易员', en: '💼 Trader' },
   'report.trader.desc':        { zh: '将投资计划转化为具体的买入/持有/卖出方案。', en: 'Turns the investment plan into a concrete buy/hold/sell plan.' },
   'report.empty':              { zh: '未返回任何报告。', en: 'No reports returned.' },
+  'report.translating':        { zh: '正在翻译报告，完成后自动显示…', en: 'Translating report, will appear shortly…' },
   'markdown.empty':            { zh: '（暂无内容）', en: '(No content)' },
 
   'decision.final_signal':     { zh: '最终信号', en: 'Final Signal' },
@@ -276,6 +277,14 @@ export function setLang(l: Lang) {
 }
 export function getLang(): Lang { return lang; }
 export function getLocale(): string { return lang === 'zh' ? 'zh-CN' : 'en-US'; }
+
+// Reconcile UI language with the server-stored preference (users.language).
+// Only reloads when the value actually changes, so it can't loop.
+export function syncLangFromServer(serverLang: string) {
+  if ((serverLang === 'zh' || serverLang === 'en') && serverLang !== lang) {
+    setLang(serverLang);
+  }
+}
 
 export function t(key: string, vars?: Record<string, string | number>): string {
   const row = DICT[key];

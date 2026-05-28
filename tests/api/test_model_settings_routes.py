@@ -374,3 +374,43 @@ def test_validate_model_settings_live_probe_failure_marks_config_invalid(monkeyp
     assert validated.json()["api_key_source"] == "user"
     assert validated.json()["probe_status"] == "model_not_found"
     assert validated.json()["probe_message"] == "model was not found by provider"
+
+
+def test_login_and_me_include_language_default_zh():
+    client = _client()
+    reg = client.post("/auth/register", json={"username": "alice", "password": "hunter22a"})
+    assert reg.json()["language"] == "zh"
+    login = client.post("/auth/login", json={"username": "alice", "password": "hunter22a"})
+    assert login.json()["language"] == "zh"
+    assert client.get("/auth/me").json()["language"] == "zh"
+
+
+def test_put_preferences_persists_language():
+    client = _client()
+    csrf = _login(client)
+
+    response = client.put(
+        "/settings/preferences",
+        json={"language": "en"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert response.status_code == 204
+    assert client.get("/auth/me").json()["language"] == "en"
+
+
+def test_put_preferences_rejects_unknown_language():
+    client = _client()
+    csrf = _login(client)
+
+    response = client.put(
+        "/settings/preferences",
+        json={"language": "fr"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert response.status_code == 422
+
+
+def test_put_preferences_requires_authentication():
+    client = _client()
+    response = client.put("/settings/preferences", json={"language": "en"})
+    assert response.status_code in (401, 403)

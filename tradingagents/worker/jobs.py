@@ -7,7 +7,9 @@ from typing import Any
 
 from tradingagents.api.db import SessionLocal
 from tradingagents.api.config import get_api_settings
+from tradingagents.api.models import AnalysisRun, AnalysisRunResult, User
 from tradingagents.api.repositories import AnalysisRunRepository
+from tradingagents.translation import build_llm_translator
 from tradingagents.worker.analysis import run_tradingagents_analysis
 from tradingagents.worker.celery_app import celery_app
 from tradingagents.worker.cancellation import AnalysisCancelled
@@ -26,25 +28,20 @@ def _execute_with_optional_run_id(
     asset_type: str,
     analysts: list[str],
     llm_config: dict[str, Any],
+    on_section=None,
 ) -> dict[str, Any]:
     try:
-        parameters = signature(executor).parameters.values()
+        parameters = list(signature(executor).parameters.values())
     except (TypeError, ValueError):
-        parameters = ()
-    accepts_run_id = any(
-        parameter.kind == Parameter.VAR_KEYWORD or parameter.name == "run_id"
-        for parameter in parameters
-    )
-    if accepts_run_id:
-        return executor(
-            ticker,
-            trade_date,
-            asset_type,
-            analysts,
-            llm_config,
-            run_id=run_id,
-        )
-    return executor(ticker, trade_date, asset_type, analysts, llm_config)
+        parameters = []
+    has_var_kw = any(p.kind == Parameter.VAR_KEYWORD for p in parameters)
+    names = {p.name for p in parameters}
+    kwargs: dict[str, Any] = {}
+    if has_var_kw or "run_id" in names:
+        kwargs["run_id"] = run_id
+    if on_section is not None and (has_var_kw or "on_section" in names):
+        kwargs["on_section"] = on_section
+    return executor(ticker, trade_date, asset_type, analysts, llm_config, **kwargs)
 
 
 def execute_analysis_run(
@@ -52,6 +49,7 @@ def execute_analysis_run(
     run_id: str,
     executor: AnalysisExecutor = run_tradingagents_analysis,
     heartbeat_interval_seconds: int | None = None,
+    on_section=None,
 ) -> None:
     run = repo.start_dispatched_run(run_id)
     if run is None:
@@ -86,6 +84,7 @@ def execute_analysis_run(
                 asset_type=run.asset_type,
                 analysts=run.analysts,
                 llm_config=run.llm_config,
+                on_section=on_section,
             )
         else:
             with heartbeat(run_id, heartbeat_interval_seconds):
@@ -97,6 +96,7 @@ def execute_analysis_run(
                     asset_type=run.asset_type,
                     analysts=run.analysts,
                     llm_config=run.llm_config,
+                    on_section=on_section,
                 )
         repo.session.refresh(run)
         if run.status in {"cancelled", "cancelling"}:
@@ -133,13 +133,86 @@ def execute_analysis_run(
         raise
 
 
+def _run_target_language(repo: AnalysisRunRepository, run: AnalysisRun) -> str | None:
+    """Owner's language, or None when translation should be skipped."""
+    if run.llm_config is None:
+        return None
+    owner = repo.session.get(User, run.user_id)
+    lang = owner.language if owner is not None else "zh"
+    return None if lang == "en" else lang
+
+
+def translate_section(
+    repo: AnalysisRunRepository,
+    run_id: str,
+    lang: str,
+    section: str,
+    text: str,
+    translator_factory: Callable[[dict[str, Any]], Any] = build_llm_translator,
+) -> None:
+    """Translate one report section and upsert it. Idempotent + best-effort.
+
+    English originals are never touched. Already-translated sections are
+    skipped so the mid-run callback and the post-success backfill don't
+    double-translate.
+    """
+    if not text or not text.strip():
+        return
+    if repo.has_translation(run_id, lang, section):
+        return
+    run = repo.session.get(AnalysisRun, run_id)
+    if run is None or run.llm_config is None:
+        return
+    translator = translator_factory(run.llm_config)
+    try:
+        translated = translator.translate(text, target_lang=lang)
+    except Exception:  # noqa: BLE001 - one section failing must not abort others
+        return
+    repo.upsert_translation(run_id, lang, section, translated)
+    repo.session.commit()
+
+
+@celery_app.task(name="tradingagents.worker.jobs.translate_section_task")
+def translate_section_task(run_id: str, lang: str, section: str, text: str) -> None:
+    with SessionLocal() as session:
+        repo = AnalysisRunRepository(session)
+        translate_section(repo, run_id, lang, section, text)
+
+
 @celery_app.task(name="tradingagents.worker.jobs.run_analysis_task")
 def run_analysis_task(run_id: str) -> None:
     with SessionLocal() as session:
         repo = AnalysisRunRepository(session)
         settings = get_api_settings()
+
+        run = repo.session.get(AnalysisRun, run_id)
+        target_lang = _run_target_language(repo, run) if run is not None else None
+
+        on_section = None
+        if target_lang is not None:
+            def on_section(section: str, text: str, _lang=target_lang) -> None:
+                # Translate analyst reports the moment they appear, while the
+                # rest of the pipeline is still running.
+                translate_section_task.apply_async(args=(run_id, _lang, section, text))
+
         execute_analysis_run(
             repo,
             run_id,
             heartbeat_interval_seconds=settings.worker_heartbeat_seconds,
+            on_section=on_section,
         )
+
+        # Backfill: cover the final-wave sections (and any the mid-run callback
+        # missed) once the English result is stored.
+        run = repo.session.get(AnalysisRun, run_id)
+        if target_lang is not None and run is not None and run.status == "succeeded":
+            result = repo.session.get(AnalysisRunResult, run_id)
+            if result is not None and result.reports:
+                for section, text in result.reports.items():
+                    if not isinstance(text, str) or not text.strip():
+                        continue
+                    if repo.has_translation(run_id, target_lang, section):
+                        continue
+                    translate_section_task.apply_async(
+                        args=(run_id, target_lang, section, text)
+                    )

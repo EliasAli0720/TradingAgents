@@ -20,6 +20,7 @@ def run_tradingagents_analysis(
     llm_config: dict[str, Any],
     *,
     run_id: str | None = None,
+    on_section=None,
 ) -> dict[str, Any]:
     config = deepcopy(DEFAULT_CONFIG)
     config.update(
@@ -33,10 +34,13 @@ def run_tradingagents_analysis(
     if llm_config.get("api_key_encrypted"):
         config["api_key"] = decrypt_secret(llm_config["api_key_encrypted"])
     graph = TradingAgentsGraph(selected_analysts=analysts, config=config)
+    propagate_kwargs: dict[str, Any] = {"asset_type": asset_type}
+    if on_section is not None:
+        propagate_kwargs["on_section_ready"] = on_section
     final_state, decision = graph.propagate(
         ticker,
         trade_date.isoformat(),
-        asset_type=asset_type,
+        **propagate_kwargs,
     )
     artifacts = []
     if run_id is None:

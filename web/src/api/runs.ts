@@ -31,6 +31,7 @@ export type RunResult = {
   status: RunStatus;
   decision: string | null;
   reports: Record<string, unknown>;
+  reports_i18n: Record<string, Record<string, unknown>> | null;
   final_state: Record<string, unknown>;
   created_at: string;
 };

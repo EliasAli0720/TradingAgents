@@ -1,12 +1,19 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import SettingsDrawer from './SettingsDrawer';
 import { PageTitle } from '@/components/ui/Page';
-import { t } from '@/i18n';
+import { t, syncLangFromServer } from '@/i18n';
+import { useAuth } from '@/hooks/useAuth';
 
 export default function AppLayout() {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const { user } = useAuth();
+
+  // Reconcile UI language with the DB-stored preference on mount / login.
+  useEffect(() => {
+    if (user?.language) syncLangFromServer(user.language);
+  }, [user?.language]);
 
   return (
     <div className="h-full flex relative">

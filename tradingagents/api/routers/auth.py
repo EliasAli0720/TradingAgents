@@ -77,7 +77,12 @@ def register(request: RegisterRequest, session: Session = Depends(get_db_session
     except WeakPassword:
         raise HTTPException(status_code=422, detail="password too weak")
     session.commit()
-    return UserResponse(user_id=user.user_id, username=user.username, role=user.role)
+    return UserResponse(
+        user_id=user.user_id,
+        username=user.username,
+        role=user.role,
+        language=user.language,
+    )
 
 
 @router.post("/login", response_model=UserResponse)
@@ -113,7 +118,12 @@ def login(
     session.commit()
 
     _set_auth_cookies(response, sid, csrf)
-    return UserResponse(user_id=user.user_id, username=user.username, role=user.role)
+    return UserResponse(
+        user_id=user.user_id,
+        username=user.username,
+        role=user.role,
+        language=user.language,
+    )
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
@@ -133,7 +143,12 @@ def logout(
 
 @router.get("/me", response_model=UserResponse)
 def me(user: User = Depends(get_current_user)):
-    return UserResponse(user_id=user.user_id, username=user.username, role=user.role)
+    return UserResponse(
+        user_id=user.user_id,
+        username=user.username,
+        role=user.role,
+        language=user.language,
+    )
 
 
 @router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)

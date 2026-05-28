@@ -1,11 +1,13 @@
 import { http } from './client';
 
 export type Role = 'admin' | 'operator' | 'viewer';
+export type Language = 'zh' | 'en';
 
 export type Me = {
   user_id: string;
   username: string;
   role: Role;
+  language: Language;
 };
 
 export const authApi = {
@@ -26,5 +28,8 @@ export const authApi = {
   },
   async changePassword(current_password: string, new_password: string): Promise<void> {
     await http.post('/auth/change-password', { current_password, new_password });
+  },
+  async setPreferences(language: Language): Promise<void> {
+    await http.put('/settings/preferences', { language });
   },
 };

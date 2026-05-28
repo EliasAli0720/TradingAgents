@@ -320,7 +320,13 @@ class TradingAgentsGraph:
         if updates and memory_store is None:
             self.memory_log.batch_update_with_outcomes(updates)
 
-    def propagate(self, company_name, trade_date, asset_type: str = "stock"):
+    def propagate(
+        self,
+        company_name,
+        trade_date,
+        asset_type: str = "stock",
+        on_section_ready=None,
+    ):
         """Run the trading agents graph for a company on a specific date.
 
         ``asset_type`` selects between the stock pipeline (default) and the
@@ -329,6 +335,11 @@ class TradingAgentsGraph:
         ``checkpoint_enabled`` is set in config, the graph is recompiled with
         a per-ticker SqliteSaver so a crashed run can resume from the last
         successful node on a subsequent invocation with the same ticker+date.
+
+        ``on_section_ready(section, text)`` is invoked the first time each
+        report section appears in the streamed state, so callers can act on
+        partial results (e.g. translate analyst reports while later agents
+        are still running) instead of waiting for the whole pipeline.
         """
         self.ticker = company_name
 
@@ -354,14 +365,25 @@ class TradingAgentsGraph:
                 logger.info("Starting fresh for %s on %s", company_name, trade_date)
 
         try:
-            return self._run_graph(company_name, trade_date, asset_type=asset_type)
+            return self._run_graph(
+                company_name,
+                trade_date,
+                asset_type=asset_type,
+                on_section_ready=on_section_ready,
+            )
         finally:
             if self._checkpointer_ctx is not None:
                 self._checkpointer_ctx.__exit__(None, None, None)
                 self._checkpointer_ctx = None
                 self.graph = self.workflow.compile()
 
-    def _run_graph(self, company_name, trade_date, asset_type: str = "stock"):
+    def _run_graph(
+        self,
+        company_name,
+        trade_date,
+        asset_type: str = "stock",
+        on_section_ready=None,
+    ):
         """Execute the graph and write the resulting state to disk and memory log."""
         # Initialize state — inject memory log context for PM.
         context = getattr(self, "__dict__", {}).get("context")
@@ -399,6 +421,29 @@ class TradingAgentsGraph:
             final_state = {}
             for chunk in trace:
                 final_state.update(chunk)
+        elif on_section_ready is not None:
+            # stream_mode="values": each chunk is the full cumulative state.
+            # Fire the callback the first time each report section appears so
+            # callers can translate analyst reports mid-pipeline.
+            from tradingagents.api.serialization import REPORT_KEYS
+
+            final_state = {}
+            seen_sections: set[str] = set()
+            for chunk in self.graph.stream(init_agent_state, **args):
+                if isinstance(chunk, dict):
+                    final_state.update(chunk)
+                for key in REPORT_KEYS:
+                    if key in seen_sections:
+                        continue
+                    value = final_state.get(key)
+                    if isinstance(value, str) and value.strip():
+                        seen_sections.add(key)
+                        try:
+                            on_section_ready(key, value)
+                        except Exception:  # noqa: BLE001 - callback must not abort the run
+                            logger.warning(
+                                "on_section_ready failed for %s", key, exc_info=True
+                            )
         else:
             final_state = self.graph.invoke(init_agent_state, **args)
 

@@ -165,11 +165,13 @@ def get_result(
     result = repo.get_result(run_id)
     if result is None:
         raise HTTPException(status_code=409, detail="result not available")
+    translations = repo.get_translations(run_id)
     return RunResultResponse(
         run_id=run_id,
         status="succeeded",
         decision=result.decision,
         reports=result.reports,
+        reports_i18n=translations or None,
         final_state=result.final_state,
         created_at=result.created_at,
     )

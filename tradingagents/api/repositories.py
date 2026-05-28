@@ -14,6 +14,7 @@ from tradingagents.api.models import (
     AnalysisRunArtifact,
     AnalysisRunEvent,
     AnalysisRunResult,
+    AnalysisRunTranslation,
 )
 
 logger = logging.getLogger(__name__)
@@ -469,6 +470,56 @@ class AnalysisRunRepository:
         run.updated_at = now
         self.add_event(run_id, "run_cancelled", {"run_id": run_id, "reason": reason})
         return run
+
+    def has_translation(self, run_id: str, lang: str, section: str) -> bool:
+        return (
+            self.session.get(AnalysisRunTranslation, (run_id, lang, section)) is not None
+        )
+
+    def upsert_translation(
+        self,
+        run_id: str,
+        lang: str,
+        section: str,
+        content: str,
+    ) -> AnalysisRunTranslation:
+        """Insert or overwrite one section's translation, then emit an event.
+
+        Written incrementally as sections become available, so this may run
+        before the result row exists. English originals are never touched.
+        """
+        row = self.session.get(AnalysisRunTranslation, (run_id, lang, section))
+        if row is None:
+            row = AnalysisRunTranslation(
+                run_id=run_id,
+                lang=lang,
+                section=section,
+                content=content,
+                created_at=utcnow(),
+            )
+            self.session.add(row)
+        else:
+            row.content = content
+        self.add_event(
+            run_id,
+            "section_translated",
+            {"run_id": run_id, "lang": lang, "section": section},
+        )
+        return row
+
+    def get_translations(self, run_id: str) -> dict[str, dict[str, str]]:
+        """Assemble {lang: {section: content}} from the staging table."""
+        if self.user_id is not None and self.get_run(run_id) is None:
+            return {}
+        rows = self.session.scalars(
+            select(AnalysisRunTranslation).where(
+                AnalysisRunTranslation.run_id == run_id
+            )
+        ).all()
+        out: dict[str, dict[str, str]] = {}
+        for row in rows:
+            out.setdefault(row.lang, {})[row.section] = row.content
+        return out
 
     def get_result(self, run_id: str) -> Optional[AnalysisRunResult]:
         if self.user_id is not None and self.get_run(run_id) is None:

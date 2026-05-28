@@ -131,6 +131,29 @@ class AnalysisRunResult(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class AnalysisRunTranslation(Base):
+    """Per-section report translations, written incrementally.
+
+    Decoupled from analysis_run_results so sections can be translated while
+    the pipeline is still running (the result row only exists once the run
+    succeeds). English originals live in AnalysisRunResult.reports and are
+    never duplicated here. Composite PK keeps each (run, language, section)
+    translated at most once.
+    """
+
+    __tablename__ = "analysis_run_translations"
+
+    run_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("analysis_runs.run_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    lang: Mapped[str] = mapped_column(String, primary_key=True)
+    section: Mapped[str] = mapped_column(String, primary_key=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class AnalysisMemoryEntry(Base):
     __tablename__ = "analysis_memory_entries"
 
@@ -172,6 +195,7 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
     role: Mapped[str] = mapped_column(String, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    language: Mapped[str] = mapped_column(String, nullable=False, default="zh")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 

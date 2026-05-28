@@ -19,10 +19,22 @@ from tradingagents.api.schemas import (
     ModelSettingsRequest,
     ModelSettingsResponse,
     ModelSettingsValidationResponse,
+    UpdatePreferencesRequest,
 )
 
 
 router = APIRouter(prefix="/settings", tags=["settings"])
+
+
+@router.put("/preferences", status_code=status.HTTP_204_NO_CONTENT)
+def update_preferences(
+    request: UpdatePreferencesRequest,
+    session: Session = Depends(get_db_session),
+    user: User = Depends(get_current_user),
+):
+    user.language = request.language
+    session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 def _response_for_settings(

@@ -92,6 +92,9 @@ class RunResultResponse(BaseModel):
     status: Literal["succeeded"]
     decision: str
     reports: dict[str, Any]
+    # Per-language translations keyed by language code, e.g. {"zh": {...}}.
+    # None until the translation task fills it; clients fall back to `reports`.
+    reports_i18n: Optional[dict[str, Any]] = None
     final_state: dict[str, Any]
     created_at: datetime
 
@@ -254,6 +257,11 @@ class UserResponse(BaseModel):
     user_id: str
     username: str
     role: UserRole
+    language: str = "zh"
+
+
+class UpdatePreferencesRequest(BaseModel):
+    language: Literal["zh", "en"]
 
 
 class AdminUserResponse(BaseModel):

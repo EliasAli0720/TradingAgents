@@ -477,3 +477,96 @@ def test_trading_graph_provider_kwargs_include_snapshot_api_key():
 
     assert graph._get_provider_kwargs()["api_key"] == "sk-user-abcdef123456"
     assert graph._get_provider_kwargs()["reasoning_effort"] == "low"
+
+
+def _seed_succeeded_run(repo, *, user_language="zh"):
+    """Create a user, a run owned by them, and store an English result."""
+    from tradingagents.api.models import User
+    from tradingagents.api.repositories import utcnow as _utcnow
+
+    repo.session.add(
+        User(
+            user_id="usr_1",
+            username="u1",
+            password_hash="h",
+            role="operator",
+            is_active=True,
+            language=user_language,
+            created_at=_utcnow(),
+        )
+    )
+    run = repo.create_run(
+        "NVDA", date(2026, 1, 15), "stock", ["market"],
+        user_id="usr_1", llm_config=LLM_CONFIG,
+    )
+    _dispatch_run(repo, run.run_id)
+    repo.session.commit()
+
+    def fake_executor(*args, **kwargs):
+        return {
+            "decision": "Hold",
+            "reports": {
+                "market_report": "## Market\nEnglish body",
+                "final_trade_decision": "**Rating**: HOLD",
+            },
+            "final_state": {"company_of_interest": "NVDA"},
+        }
+
+    execute_analysis_run(repo, run.run_id, fake_executor)
+    repo.session.commit()
+    return run
+
+
+class _FakeTranslator:
+    def translate(self, markdown, *, target_lang):
+        return f"[{target_lang}] {markdown}"
+
+
+def test_translate_section_stores_translation_and_keeps_english():
+    from tradingagents.worker.jobs import translate_section
+
+    session, repo = _repo()
+    run = _seed_succeeded_run(repo, user_language="zh")
+
+    translate_section(
+        repo, run.run_id, "zh", "market_report", "## Market\nEnglish body",
+        translator_factory=lambda cfg: _FakeTranslator(),
+    )
+    session.commit()
+
+    # English untouched
+    assert repo.get_result(run.run_id).reports["market_report"] == "## Market\nEnglish body"
+    # Chinese translation lands in the staging table, assembled by get_translations
+    translations = repo.get_translations(run.run_id)
+    assert translations["zh"]["market_report"].startswith("[zh] ## Market")
+    assert "section_translated" in [e.event_type for e in repo.list_events(run.run_id)]
+
+
+def test_translate_section_is_idempotent():
+    from tradingagents.worker.jobs import translate_section
+
+    session, repo = _repo()
+    run = _seed_succeeded_run(repo, user_language="zh")
+
+    calls = []
+
+    def factory(cfg):
+        calls.append(cfg)
+        return _FakeTranslator()
+
+    translate_section(repo, run.run_id, "zh", "market_report", "body", translator_factory=factory)
+    session.commit()
+    # Second call for the same section must skip (already translated).
+    translate_section(repo, run.run_id, "zh", "market_report", "body", translator_factory=factory)
+    session.commit()
+
+    assert len(calls) == 1
+
+
+def test_run_target_language_skips_english_owner():
+    from tradingagents.worker.jobs import _run_target_language
+
+    session, repo = _repo()
+    run = _seed_succeeded_run(repo, user_language="en")
+
+    assert _run_target_language(repo, repo.require_run(run.run_id)) is None

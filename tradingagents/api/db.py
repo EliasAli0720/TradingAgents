@@ -124,6 +124,14 @@ def ensure_additive_schema(db_engine) -> None:
                         )
                     )
 
+    if "users" in table_names:
+        user_columns = {column["name"] for column in inspector.get_columns("users")}
+        if "language" not in user_columns:
+            with db_engine.begin() as connection:
+                connection.execute(
+                    text("ALTER TABLE users ADD COLUMN language VARCHAR NOT NULL DEFAULT 'zh'")
+                )
+
     if "user_model_settings" not in table_names:
         return
 

@@ -6,7 +6,7 @@ import { useRunEvents } from '@/hooks/useRunEvents';
 import { useAuth } from '@/hooks/useAuth';
 import { Subheader, ErrorBox } from '@/components/ui/Page';
 import { StatusBadge } from './list';
-import { t } from '@/i18n';
+import { t, getLang } from '@/i18n';
 import DecisionCard from '@/components/run/DecisionCard';
 import AgentReportTabs, { type ReportMap } from '@/components/run/AgentReportTabs';
 import RunProgress from '@/components/run/RunProgress';
@@ -42,6 +42,16 @@ export default function AnalysisDetailPage() {
     queryKey: ['runResult', runId],
     queryFn: () => runsApi.result(runId!),
     enabled: !!runId && run.data?.status === 'succeeded',
+    // The translation task runs after the run succeeds (and after the SSE
+    // stream has already closed on the terminal event), so poll the result
+    // until the current language's translation lands. English needs none.
+    refetchInterval: (q) => {
+      const lang = getLang();
+      if (lang === 'en') return false;
+      const data = q.state.data;
+      if (!data) return false;
+      return data.reports_i18n?.[lang] ? false : 4000;
+    },
   });
 
   const artifacts = useQuery({
@@ -103,7 +113,12 @@ export default function AnalysisDetailPage() {
         result.isLoading ? (
           <div className="text-muted text-sm">{t('analysis.loading_result')}</div>
         ) : result.data ? (
-          <AgentReportTabs reports={reports} />
+          <>
+            {getLang() !== 'en' && !result.data.reports_i18n?.[getLang()] && (
+              <div className="text-xs text-muted mb-2">{t('report.translating')}</div>
+            )}
+            <AgentReportTabs reports={reports} reportsI18n={result.data.reports_i18n} />
+          </>
         ) : (
           <ErrorBox>{t('analysis.result_failed')}</ErrorBox>
         )
