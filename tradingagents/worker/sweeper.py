@@ -36,6 +36,11 @@ def sweep_once(session: Session, stale_after_seconds: int) -> int:
         select(AnalysisRun).where(AnalysisRun.status.in_(("running", "cancelling")))
     )
     for run in running_candidates:
+        if run.status == "cancelling" and run.started_at is None and run.heartbeat_at is None:
+            if repo.mark_cancelled(run.run_id, run.error or "analysis cancelled") is not None:
+                repaired += 1
+            continue
+
         last_seen_at = _as_aware(
             run.heartbeat_at or run.started_at or run.updated_at or run.created_at
         )

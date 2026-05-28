@@ -331,6 +331,30 @@ def test_post_cancel_running_run_marks_cancelling_and_revokes_task():
         assert AnalysisRunRepository(session).list_events(run_id)[-1].event_type == "run_cancelling"
 
 
+def test_post_cancel_dispatching_run_marks_cancelled_and_revokes_task():
+    client, Session, _ = _client()
+    revoked = []
+    client.app.dependency_overrides[get_task_revoke] = lambda: revoked.append
+
+    with Session() as session:
+        repo = AnalysisRunRepository(session)
+        run = repo.create_run("NVDA", date(2026, 1, 15), "stock", ["market"])
+        run.status = "dispatching"
+        repo.set_celery_task_id(run.run_id, "celery-test-id")
+        run_id = run.run_id
+        session.commit()
+
+    response = client.post(f"/runs/{run_id}/cancel")
+
+    assert response.status_code == 200
+    assert response.json() == {"run_id": run_id, "status": "cancelled"}
+    assert revoked == ["celery-test-id"]
+    with Session() as session:
+        saved = AnalysisRunRepository(session).get_run(run_id)
+        assert saved.status == "cancelled"
+        assert AnalysisRunRepository(session).list_events(run_id)[-1].event_type == "run_cancelled"
+
+
 def test_post_cancel_missing_run_returns_404():
     client, _Session, _ = _client()
 

@@ -40,6 +40,33 @@ def test_sweeper_requeues_expired_dispatching_run():
     assert repo.list_events(run.run_id)[-1].event_type == "run_requeued"
 
 
+def test_sweeper_cancels_orphaned_dispatching_cancellation():
+    session, repo = _repo()
+    run = repo.create_run(
+        "NVDA",
+        date(2026, 1, 15),
+        "stock",
+        ["market"],
+        user_id="usr_1",
+        llm_config={},
+    )
+    run.status = "cancelling"
+    run.celery_task_id = "task-revoked"
+    run.dispatched_at = utcnow() - timedelta(seconds=120)
+    run.lease_expires_at = utcnow() - timedelta(seconds=1)
+    run.updated_at = utcnow() - timedelta(seconds=120)
+    run.error = "user requested cancellation"
+    session.commit()
+
+    sweep_once(session, stale_after_seconds=90)
+
+    saved = repo.get_run(run.run_id)
+    assert saved.status == "cancelled"
+    assert saved.finished_at is not None
+    assert saved.error == "user requested cancellation"
+    assert repo.list_events(run.run_id)[-1].event_type == "run_cancelled"
+
+
 def test_sweeper_fails_stale_running_after_attempts_exhausted():
     session, repo = _repo()
     run = repo.create_run(

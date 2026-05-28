@@ -440,7 +440,7 @@ class AnalysisRunRepository:
             raise ValueError(f"Cannot cancel terminal run {run_id}")
 
         now = utcnow()
-        if run.status in {"running", "dispatching"}:
+        if run.status == "running":
             run.status = "cancelling"
             run.current_step = "Cancelling"
             run.error = reason
@@ -448,13 +448,7 @@ class AnalysisRunRepository:
             self.add_event(run_id, "run_cancelling", {"run_id": run_id, "reason": reason})
             return run
 
-        run.status = "cancelled"
-        run.finished_at = now
-        run.current_step = "Cancelled"
-        run.error = reason
-        run.updated_at = now
-        self.add_event(run_id, "run_cancelled", {"run_id": run_id, "reason": reason})
-        return run
+        return self.mark_cancelled(run_id, reason)
 
     def mark_cancelled(self, run_id: str, reason: str = "run cancelled") -> AnalysisRun:
         run = self.require_run(run_id)
@@ -466,6 +460,10 @@ class AnalysisRunRepository:
         now = utcnow()
         run.status = "cancelled"
         run.finished_at = now
+        run.celery_task_id = None
+        run.dispatched_at = None
+        run.heartbeat_at = None
+        run.lease_expires_at = None
         run.current_step = "Cancelled"
         run.error = reason
         run.updated_at = now

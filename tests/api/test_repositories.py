@@ -18,7 +18,7 @@ from tradingagents.api.models import (
     User,
     UserModelSetting,
 )
-from tradingagents.api.repositories import AnalysisRunRepository
+from tradingagents.api.repositories import AnalysisRunRepository, utcnow
 
 
 def _session():
@@ -386,6 +386,32 @@ def test_repository_cancels_running_run():
         "run_queued",
         "run_started",
         "run_cancelling",
+    ]
+
+
+def test_repository_cancels_dispatching_run_immediately():
+    session = _session()
+    repo = AnalysisRunRepository(session)
+    run = repo.create_run(
+        ticker="NVDA",
+        trade_date=date(2026, 1, 15),
+        asset_type="stock",
+        analysts=["market"],
+    )
+    run.status = "dispatching"
+    run.celery_task_id = "task-dispatched"
+    run.dispatched_at = utcnow()
+
+    repo.cancel_run(run.run_id, "user requested cancellation")
+    session.commit()
+
+    saved = repo.get_run(run.run_id)
+    assert saved.status == "cancelled"
+    assert saved.finished_at is not None
+    assert saved.current_step == "Cancelled"
+    assert [event.event_type for event in repo.list_events(run.run_id)] == [
+        "run_queued",
+        "run_cancelled",
     ]
 
 
