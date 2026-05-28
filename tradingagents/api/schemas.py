@@ -95,6 +95,23 @@ class RunResultResponse(BaseModel):
     created_at: datetime
 
 
+class RunArtifactResponse(BaseModel):
+    artifact_id: str
+    kind: str
+    content_type: Optional[str]
+    size_bytes: int
+    created_at: datetime
+
+
+class CapacityResponse(BaseModel):
+    max_running_system: int
+    max_running_per_user: int
+    max_queued_per_user: int
+    running_system: int
+    dispatching_system: int
+    queued_system: int
+
+
 class HealthResponse(BaseModel):
     status: str
     postgres: str

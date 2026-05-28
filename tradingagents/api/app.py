@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from tradingagents.api.config import get_api_settings
 from tradingagents.api.db import init_db
 from tradingagents.api.middleware import CsrfMiddleware
-from tradingagents.api.routers import admin, auth, health, runs, settings
+from tradingagents.api.routers import admin, auth, capacity, health, runs, settings
 
 
 def create_app() -> FastAPI:
@@ -25,6 +25,7 @@ def create_app() -> FastAPI:
     app.include_router(settings.router)
     app.include_router(runs.router)
     app.include_router(admin.router)
+    app.include_router(capacity.router)
 
     @app.on_event("startup")
     def _startup():

@@ -224,6 +224,41 @@ def test_result_after_completion_returns_payload():
     assert response.json()["decision"] == "Hold"
 
 
+def test_run_artifacts_are_owner_scoped():
+    client, _Session, _ = _client()
+
+    response = client.get("/runs/run_missing/artifacts")
+
+    assert response.status_code == 404
+
+
+def test_run_artifacts_returns_artifact_metadata():
+    client, Session, _ = _client()
+    with Session() as session:
+        repo = AnalysisRunRepository(session)
+        run = repo.create_run("NVDA", date(2026, 1, 15), "stock", ["market"])
+        repo.add_artifact(
+            run.run_id,
+            {
+                "kind": "report_md",
+                "storage_backend": "local",
+                "storage_key": f"{run.run_id}/reports/complete_report.md",
+                "content_type": "text/markdown",
+                "size_bytes": 12,
+                "sha256": "abc",
+            },
+        )
+        run_id = run.run_id
+        session.commit()
+
+    response = client.get(f"/runs/{run_id}/artifacts")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body[0]["kind"] == "report_md"
+    assert body[0]["size_bytes"] == 12
+
+
 def test_post_runs_commits_queued_run_without_enqueue():
     calls = []
     client, Session = _client_with_enqueue(calls.append)

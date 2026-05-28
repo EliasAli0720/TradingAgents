@@ -28,6 +28,7 @@ from tradingagents.api.schemas import (
     CancelRunResponse,
     CreateRunRequest,
     CreateRunResponse,
+    RunArtifactResponse,
     RunResultResponse,
     RunStatusResponse,
 )
@@ -152,6 +153,37 @@ def get_result(
         final_state=result.final_state,
         created_at=result.created_at,
     )
+
+
+@router.get("/{run_id}/artifacts", response_model=list[RunArtifactResponse])
+def list_artifacts(
+    run_id: str,
+    repo: AnalysisRunRepository = Depends(get_scoped_repository),
+):
+    if repo.get_run(run_id) is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    return repo.list_artifacts(run_id)
+
+
+@router.get("/{run_id}/artifacts/{artifact_id}", response_model=RunArtifactResponse)
+def get_artifact(
+    run_id: str,
+    artifact_id: str,
+    repo: AnalysisRunRepository = Depends(get_scoped_repository),
+):
+    if repo.get_run(run_id) is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    artifact = next(
+        (
+            artifact
+            for artifact in repo.list_artifacts(run_id)
+            if artifact.artifact_id == artifact_id
+        ),
+        None,
+    )
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="artifact not found")
+    return artifact
 
 
 @router.get("/{run_id}/events")
