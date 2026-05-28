@@ -235,6 +235,68 @@ class ModelSettingsValidationResponse(BaseModel):
     probe_message: Optional[str] = None
 
 
+class TranslationSettingsRequest(BaseModel):
+    llm_provider: str
+    model: str
+    backend_url: Optional[str] = None
+    api_key: Optional[str] = None
+
+    @field_validator("llm_provider")
+    @classmethod
+    def validate_provider(cls, value: str) -> str:
+        return value.strip().lower()
+
+    @field_validator("model")
+    @classmethod
+    def validate_model_id(cls, value: str) -> str:
+        model = value.strip()
+        if not model:
+            raise ValueError("model id cannot be empty")
+        return model
+
+    @field_validator("backend_url")
+    @classmethod
+    def validate_backend_url(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        url = value.strip()
+        if not url:
+            return None
+        if not (url.startswith("http://") or url.startswith("https://")):
+            raise ValueError("backend_url must start with http:// or https://")
+        return url
+
+    @field_validator("api_key")
+    @classmethod
+    def validate_api_key(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        api_key = value.strip()
+        return api_key or None
+
+
+class TranslationSettingsResponse(BaseModel):
+    llm_provider: str
+    model: str
+    backend_url: Optional[str]
+    has_api_key: bool
+    api_key_masked: Optional[str]
+
+
+class TranslationProviderOptionResponse(BaseModel):
+    id: str
+    label: str
+    model_id: str
+    model_label: str
+    required_env_var: Optional[str]
+    default_backend_url: Optional[str]
+    backend_url_editable: bool
+
+
+class TranslationOptionsResponse(BaseModel):
+    providers: list[TranslationProviderOptionResponse]
+
+
 UserRole = Literal["admin", "operator", "viewer"]
 
 

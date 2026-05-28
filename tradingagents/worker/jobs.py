@@ -9,7 +9,10 @@ from tradingagents.api.db import SessionLocal
 from tradingagents.api.config import get_api_settings
 from tradingagents.api.models import AnalysisRun, AnalysisRunResult, User
 from tradingagents.api.repositories import AnalysisRunRepository
-from tradingagents.translation import build_llm_translator
+from tradingagents.api.translation_settings_repository import (
+    UserTranslationSettingsRepository,
+)
+from tradingagents.translation import build_llm_translator, build_translation_translator
 from tradingagents.worker.analysis import run_tradingagents_analysis
 from tradingagents.worker.celery_app import celery_app
 from tradingagents.worker.cancellation import AnalysisCancelled
@@ -142,13 +145,22 @@ def _run_target_language(repo: AnalysisRunRepository, run: AnalysisRun) -> str |
     return None if lang == "en" else lang
 
 
+def _default_translator_factory(repo: AnalysisRunRepository, run: AnalysisRun):
+    """Prefer the user's dedicated translation model; fall back to the
+    analysis model only when no translation model is configured."""
+    tcfg = UserTranslationSettingsRepository(repo.session).snapshot(run.user_id)
+    if tcfg is not None:
+        return build_translation_translator(tcfg)
+    return build_llm_translator(run.llm_config)
+
+
 def translate_section(
     repo: AnalysisRunRepository,
     run_id: str,
     lang: str,
     section: str,
     text: str,
-    translator_factory: Callable[[dict[str, Any]], Any] = build_llm_translator,
+    translator_factory: Callable[[AnalysisRunRepository, AnalysisRun], Any] = _default_translator_factory,
 ) -> None:
     """Translate one report section and upsert it. Idempotent + best-effort.
 
@@ -163,7 +175,7 @@ def translate_section(
     run = repo.session.get(AnalysisRun, run_id)
     if run is None or run.llm_config is None:
         return
-    translator = translator_factory(run.llm_config)
+    translator = translator_factory(repo, run)
     try:
         translated = translator.translate(text, target_lang=lang)
     except Exception:  # noqa: BLE001 - one section failing must not abort others

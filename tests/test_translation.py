@@ -2,8 +2,39 @@ import pytest
 
 from tradingagents.translation import (
     LLMReportTranslator,
+    _clean_translation_output,
     translate_reports,
 )
+
+
+@pytest.mark.unit
+def test_clean_translation_unwraps_code_fence():
+    wrapped = "```markdown\n# 标题\n\n正文\n```"
+    assert _clean_translation_output(wrapped) == "# 标题\n\n正文"
+
+
+@pytest.mark.unit
+def test_clean_translation_strips_echoed_delimiters():
+    echoed = "----- BEGIN REPORT -----\n# 标题\n正文\n----- END REPORT -----"
+    assert _clean_translation_output(echoed) == "# 标题\n正文"
+
+
+@pytest.mark.unit
+def test_clean_translation_leaves_plain_markdown_untouched():
+    plain = "# 标题\n\n| a | b |\n|---|---|\n| 1 | 2 |"
+    assert _clean_translation_output(plain) == plain
+
+
+@pytest.mark.unit
+def test_llm_translator_cleans_fenced_output():
+    class _LLM:
+        def invoke(self, prompt, config=None):
+            class _R:
+                content = "```markdown\n# 行情\n**强劲**\n```"
+            return _R()
+
+    out = LLMReportTranslator(_LLM()).translate("# Market", target_lang="zh")
+    assert out == "# 行情\n**强劲**"
 
 
 class _FakeLLM:

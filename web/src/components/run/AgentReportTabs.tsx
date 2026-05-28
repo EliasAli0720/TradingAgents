@@ -7,7 +7,7 @@ type Tab = {
   key: string;
   label: string;
   desc: string;
-  source?: string;
+  field: string;
 };
 
 export type ReportMap = Record<string, unknown>;
@@ -17,14 +17,15 @@ function s(reports: ReportMap, key: string): string {
   return typeof v === 'string' ? v : '';
 }
 
-// Prefer the current-language translation; fall back to the English original.
-function pick(reports: ReportMap, translated: ReportMap | undefined, key: string): string {
-  if (translated) {
-    const tv = translated[key];
-    if (typeof tv === 'string' && tv.trim()) return tv;
-  }
-  return s(reports, key);
-}
+const TAB_DEFS: { key: string; labelKey: string; descKey: string; field: string }[] = [
+  { key: 'pm', labelKey: 'report.pm', descKey: 'report.pm.desc', field: 'final_trade_decision' },
+  { key: 'market', labelKey: 'report.market', descKey: 'report.market.desc', field: 'market_report' },
+  { key: 'news', labelKey: 'report.news', descKey: 'report.news.desc', field: 'news_report' },
+  { key: 'sentiment', labelKey: 'report.sentiment', descKey: 'report.sentiment.desc', field: 'sentiment_report' },
+  { key: 'fundamentals', labelKey: 'report.fundamentals', descKey: 'report.fundamentals.desc', field: 'fundamentals_report' },
+  { key: 'research_mgr', labelKey: 'report.research_mgr', descKey: 'report.research_mgr.desc', field: 'investment_plan' },
+  { key: 'trader', labelKey: 'report.trader', descKey: 'report.trader.desc', field: 'trader_investment_plan' },
+];
 
 export default function AgentReportTabs({
   reports,
@@ -33,51 +34,14 @@ export default function AgentReportTabs({
   reports: ReportMap;
   reportsI18n?: Record<string, ReportMap> | null;
 }) {
-  const translated = reportsI18n?.[getLang()];
-  const tabs: Tab[] = [
-    {
-      key: 'pm',
-      label: t('report.pm'),
-      desc: t('report.pm.desc'),
-      source: pick(reports, translated, 'final_trade_decision'),
-    },
-    {
-      key: 'market',
-      label: t('report.market'),
-      desc: t('report.market.desc'),
-      source: pick(reports, translated, 'market_report'),
-    },
-    {
-      key: 'news',
-      label: t('report.news'),
-      desc: t('report.news.desc'),
-      source: pick(reports, translated, 'news_report'),
-    },
-    {
-      key: 'sentiment',
-      label: t('report.sentiment'),
-      desc: t('report.sentiment.desc'),
-      source: pick(reports, translated, 'sentiment_report'),
-    },
-    {
-      key: 'fundamentals',
-      label: t('report.fundamentals'),
-      desc: t('report.fundamentals.desc'),
-      source: pick(reports, translated, 'fundamentals_report'),
-    },
-    {
-      key: 'research_mgr',
-      label: t('report.research_mgr'),
-      desc: t('report.research_mgr.desc'),
-      source: pick(reports, translated, 'investment_plan'),
-    },
-    {
-      key: 'trader',
-      label: t('report.trader'),
-      desc: t('report.trader.desc'),
-      source: pick(reports, translated, 'trader_investment_plan'),
-    },
-  ].filter((t) => t.source && t.source.trim().length > 0);
+  const lang = getLang();
+  const translated = reportsI18n?.[lang];
+
+  // Tabs exist based on the English source of truth, so the tab set stays
+  // stable while translations stream in (no tabs popping in/out).
+  const tabs: Tab[] = TAB_DEFS
+    .filter((d) => s(reports, d.field).trim().length > 0)
+    .map((d) => ({ key: d.key, label: t(d.labelKey), desc: t(d.descKey), field: d.field }));
 
   const [active, setActive] = useState(tabs[0]?.key ?? '');
   const cur = tabs.find((t) => t.key === active) ?? tabs[0];
@@ -86,16 +50,30 @@ export default function AgentReportTabs({
     return <div className="card text-muted text-sm italic">{t('report.empty')}</div>;
   }
 
+  // For non-English, show the translation; if a section isn't translated yet,
+  // show a "translating" placeholder rather than flashing the English text.
+  let body: React.ReactNode;
+  if (cur) {
+    if (lang === 'en') {
+      body = <Markdown source={s(reports, cur.field)} />;
+    } else {
+      const tv = translated?.[cur.field];
+      body = typeof tv === 'string' && tv.trim()
+        ? <Markdown source={tv} />
+        : <div className="text-sm text-muted italic">{t('report.translating')}</div>;
+    }
+  }
+
   return (
     <div>
       <div className="tabs">
-        {tabs.map((t) => (
+        {tabs.map((tab) => (
           <button
-            key={t.key}
-            className={clsx(active === t.key && 'active')}
-            onClick={() => setActive(t.key)}
+            key={tab.key}
+            className={clsx(active === tab.key && 'active')}
+            onClick={() => setActive(tab.key)}
           >
-            {t.label}
+            {tab.label}
           </button>
         ))}
       </div>
@@ -105,7 +83,7 @@ export default function AgentReportTabs({
           <h3 className="text-base font-semibold">{cur.label.replace(/^[^\s]+\s/, '')}</h3>
           <div className="text-xs text-muted mb-3">{cur.desc}</div>
           <div className="st-divider !my-3" />
-          <Markdown source={cur.source!} />
+          {body}
         </div>
       )}
     </div>

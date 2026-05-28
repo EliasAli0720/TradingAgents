@@ -49,6 +49,33 @@ export type ProviderOption = {
 
 export type ModelOptions = { providers: ProviderOption[] };
 
+export type TranslationSettings = {
+  llm_provider: string;
+  model: string;
+  backend_url: string | null;
+  has_api_key: boolean;
+  api_key_masked: string | null;
+};
+
+export type TranslationSettingsInput = {
+  llm_provider: string;
+  model: string;
+  backend_url?: string | null;
+  api_key?: string | null;
+};
+
+export type TranslationProviderOption = {
+  id: string;
+  label: string;
+  model_id: string;
+  model_label: string;
+  required_env_var: string | null;
+  default_backend_url: string | null;
+  backend_url_editable: boolean;
+};
+
+export type TranslationOptions = { providers: TranslationProviderOption[] };
+
 export const settingsApi = {
   async options(): Promise<ModelOptions> {
     const { data } = await http.get<ModelOptions>('/settings/model/options');
@@ -67,6 +94,27 @@ export const settingsApi = {
   },
   async validate(): Promise<ValidateResult> {
     const { data } = await http.post<ValidateResult>('/settings/model/validate');
+    return data;
+  },
+
+  // ── Dedicated translation model ──
+  async translationOptions(): Promise<TranslationOptions> {
+    const { data } = await http.get<TranslationOptions>('/settings/translation/options');
+    return data;
+  },
+  async translationGet(): Promise<TranslationSettings> {
+    const { data } = await http.get<TranslationSettings>('/settings/translation');
+    return data;
+  },
+  async translationPut(input: TranslationSettingsInput): Promise<TranslationSettings> {
+    const { data } = await http.put<TranslationSettings>('/settings/translation', input);
+    return data;
+  },
+  async translationClearKey(): Promise<void> {
+    await http.delete('/settings/translation/api-key');
+  },
+  async translationValidate(): Promise<ValidateResult> {
+    const { data } = await http.post<ValidateResult>('/settings/translation/validate');
     return data;
   },
 };

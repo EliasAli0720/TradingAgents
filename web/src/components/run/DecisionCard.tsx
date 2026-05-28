@@ -1,7 +1,7 @@
 // Top-of-page decision card. Extracts SIGNAL / Action / Entry / Stop / Target / Horizon
 // from the reports' free-text markdown.
 
-import { t } from '@/i18n';
+import { t, getLang } from '@/i18n';
 
 const SIGNAL_COLORS: Record<string, { fg: string; bg: string }> = {
   BUY:         { fg: '#4CAF50', bg: '#1b2a1d' },
@@ -74,7 +74,7 @@ export default function DecisionCard({ inputs }: { inputs: DecisionInputs }) {
         {horiz && <Field label={t('decision.horizon')} value={horiz} />}
       </div>
 
-      {summary && (
+      {summary && getLang() === 'en' && (
         <div className="mt-4 pt-4 border-t border-border/40">
           <div className="text-xs uppercase tracking-widest text-muted mb-1">{t('decision.summary')}</div>
           <div className="text-sm leading-6 text-text/90">{summary}</div>

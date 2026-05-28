@@ -12,6 +12,7 @@ const GROUPS: { title: string; items: Item[] }[] = [
     title: 'group.settings',
     items: [
       { to: '/settings/model', label: 'nav.model' },
+      { to: '/settings/translation', label: 'nav.translation' },
       { to: '/settings/account', label: 'nav.account' },
     ],
   },

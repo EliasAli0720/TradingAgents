@@ -10,6 +10,7 @@ only means adding another implementation and changing the factory.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Protocol
 
 logger = logging.getLogger(__name__)
@@ -30,9 +31,34 @@ _PROMPT_TEMPLATE = (
     "ticker symbols, and technical indicator abbreviations (MACD, RSI, EPS, "
     "SMA, EMA, ATR, VWMA, P/E, etc.).\n"
     "- Keep the meaning faithful; do not add, drop, or reorder sections.\n"
-    "- Output ONLY the translated Markdown. No preamble, no explanation.\n\n"
-    "----- BEGIN REPORT -----\n{markdown}\n----- END REPORT -----"
+    "- Output ONLY the translated Markdown itself. Do NOT wrap the whole "
+    "output in a ``` code fence, and do NOT repeat these instructions or any "
+    "delimiter lines.\n\n"
+    "Report to translate:\n\n{markdown}"
 )
+
+
+def _clean_translation_output(text: str) -> str:
+    """Strip artifacts LLMs add around translated Markdown.
+
+    Two common ones break rendering: (1) wrapping the whole report in a
+    ```/```markdown code fence (react-markdown then shows it as a literal
+    code block), and (2) echoing prompt delimiter lines. Remove both so the
+    stored content is clean Markdown.
+    """
+    t = text.strip()
+    # Drop echoed prompt delimiters if present.
+    t = re.sub(r"^-{3,}\s*BEGIN REPORT\s*-{3,}\s*", "", t, flags=re.IGNORECASE)
+    t = re.sub(r"\s*-{3,}\s*END REPORT\s*-{3,}\s*$", "", t, flags=re.IGNORECASE)
+    t = t.strip()
+    # Unwrap a single code fence that encloses the entire output.
+    if t.startswith("```"):
+        lines = t.split("\n")
+        lines = lines[1:]  # drop the opening ``` / ```markdown line
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]  # drop the closing ``` line
+        t = "\n".join(lines).strip()
+    return t
 
 
 class ReportTranslator(Protocol):
@@ -57,7 +83,7 @@ class LLMReportTranslator:
             config={"run_name": "report_translation"},
         )
         content = getattr(response, "content", response)
-        return str(content).strip()
+        return _clean_translation_output(str(content))
 
 
 def translate_reports(
@@ -85,23 +111,45 @@ def translate_reports(
     return translated
 
 
-def build_llm_translator(llm_config: dict[str, Any]) -> LLMReportTranslator:
-    """Build the default LLM-backed translator from a run's llm_config snapshot.
-
-    Uses the quick-think model (translation is mechanical and cost-sensitive).
-    """
+def _build_translator(
+    provider: str,
+    model: str,
+    backend_url: str | None,
+    api_key_encrypted: str | None,
+) -> LLMReportTranslator:
     from tradingagents.api.crypto import decrypt_secret
     from tradingagents.llm_clients.factory import create_llm_client
 
-    api_key = None
-    if llm_config.get("api_key_encrypted"):
-        api_key = decrypt_secret(llm_config["api_key_encrypted"])
-
+    api_key = decrypt_secret(api_key_encrypted) if api_key_encrypted else None
     client = create_llm_client(
-        llm_config["llm_provider"],
-        llm_config["quick_think_llm"],
-        llm_config.get("backend_url"),
+        provider,
+        model,
+        backend_url,
         api_key=api_key,
         max_retries=1,
     )
     return LLMReportTranslator(client.get_llm())
+
+
+def build_llm_translator(llm_config: dict[str, Any]) -> LLMReportTranslator:
+    """Fallback translator from a run's analysis llm_config snapshot.
+
+    Used only when the user has not configured a dedicated translation model.
+    Uses the quick-think model (translation is mechanical and cost-sensitive).
+    """
+    return _build_translator(
+        llm_config["llm_provider"],
+        llm_config["quick_think_llm"],
+        llm_config.get("backend_url"),
+        llm_config.get("api_key_encrypted"),
+    )
+
+
+def build_translation_translator(translation_config: dict[str, Any]) -> LLMReportTranslator:
+    """Translator from the user's dedicated translation settings snapshot."""
+    return _build_translator(
+        translation_config["llm_provider"],
+        translation_config["model"],
+        translation_config.get("backend_url"),
+        translation_config.get("api_key_encrypted"),
+    )

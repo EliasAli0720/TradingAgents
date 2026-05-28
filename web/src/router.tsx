@@ -11,6 +11,7 @@ import AnalysisListPage from './routes/analysis/list';
 import AnalysisNewPage from './routes/analysis/new';
 import AnalysisDetailPage from './routes/analysis/detail';
 import ModelSettingsPage from './routes/settings/model';
+import TranslationSettingsPage from './routes/settings/translation';
 import AccountSettingsPage from './routes/settings/account';
 import AdminUsersPage from './routes/admin/users';
 import AdminRunsPage from './routes/admin/runs';
@@ -29,6 +30,7 @@ export const router = createBrowserRouter([
       { path: '/trades', element: <TradesPage /> },
       { path: '/risk', element: <RiskPage /> },
       { path: '/settings/model', element: <ModelSettingsPage /> },
+      { path: '/settings/translation', element: <TranslationSettingsPage /> },
       { path: '/settings/account', element: <AccountSettingsPage /> },
       {
         path: '/admin/users',

@@ -530,7 +530,7 @@ def test_translate_section_stores_translation_and_keeps_english():
 
     translate_section(
         repo, run.run_id, "zh", "market_report", "## Market\nEnglish body",
-        translator_factory=lambda cfg: _FakeTranslator(),
+        translator_factory=lambda repo, run: _FakeTranslator(),
     )
     session.commit()
 
@@ -550,8 +550,8 @@ def test_translate_section_is_idempotent():
 
     calls = []
 
-    def factory(cfg):
-        calls.append(cfg)
+    def factory(repo, run):
+        calls.append(run.run_id)
         return _FakeTranslator()
 
     translate_section(repo, run.run_id, "zh", "market_report", "body", translator_factory=factory)

@@ -236,6 +236,23 @@ class UserModelSetting(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class UserTranslationSetting(Base):
+    """Per-user model dedicated to report translation, separate from the
+    analysis model. Only a single model (no deep/quick split)."""
+
+    __tablename__ = "user_translation_settings"
+
+    user_id: Mapped[str] = mapped_column(
+        String, ForeignKey("users.user_id", ondelete="CASCADE"), primary_key=True
+    )
+    llm_provider: Mapped[str] = mapped_column(String, nullable=False)
+    model: Mapped[str] = mapped_column(String, nullable=False)
+    backend_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    encrypted_api_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class LLMProviderOption(Base):
     __tablename__ = "llm_provider_options"
 

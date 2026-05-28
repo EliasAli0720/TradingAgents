@@ -1,7 +1,7 @@
 import { useParams } from 'react-router-dom';
 import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { runsApi } from '@/api/runs';
+import { runsApi, type RunResult } from '@/api/runs';
 import { useRunEvents } from '@/hooks/useRunEvents';
 import { useAuth } from '@/hooks/useAuth';
 import { Subheader, ErrorBox } from '@/components/ui/Page';
@@ -42,22 +42,17 @@ export default function AnalysisDetailPage() {
     queryKey: ['runResult', runId],
     queryFn: () => runsApi.result(runId!),
     enabled: !!runId && run.data?.status === 'succeeded',
-    // The translation task runs after the run succeeds (and after the SSE
-    // stream has already closed on the terminal event), so poll the result
-    // until the current language's translation lands. English needs none.
+    // Translations stream in section-by-section after the run succeeds, so
+    // poll until EVERY section has a translation for the current language —
+    // not just the first — otherwise some tabs would stay untranslated until
+    // a manual refresh. English needs no polling.
     refetchInterval: (q) => {
       const lang = getLang();
       if (lang === 'en') return false;
       const data = q.state.data;
       if (!data) return false;
-      return data.reports_i18n?.[lang] ? false : 4000;
+      return translationComplete(data, lang) ? false : 4000;
     },
-  });
-
-  const artifacts = useQuery({
-    queryKey: ['runArtifacts', runId],
-    queryFn: () => runsApi.artifacts(runId!),
-    enabled: !!runId && run.data?.status === 'succeeded',
   });
 
   const cancel = useMutation({
@@ -105,16 +100,12 @@ export default function AnalysisDetailPage() {
         />
       )}
 
-      {r.status === 'succeeded' && (
-        <ArtifactList runId={r.run_id} artifacts={artifacts.data ?? []} loading={artifacts.isLoading} error={artifacts.isError} />
-      )}
-
       {r.status === 'succeeded' ? (
         result.isLoading ? (
           <div className="text-muted text-sm">{t('analysis.loading_result')}</div>
         ) : result.data ? (
           <>
-            {getLang() !== 'en' && !result.data.reports_i18n?.[getLang()] && (
+            {getLang() !== 'en' && !translationComplete(result.data, getLang()) && (
               <div className="text-xs text-muted mb-2">{t('report.translating')}</div>
             )}
             <AgentReportTabs reports={reports} reportsI18n={result.data.reports_i18n} />
@@ -140,50 +131,14 @@ export default function AnalysisDetailPage() {
   );
 }
 
-function ArtifactList({
-  runId,
-  artifacts,
-  loading,
-  error,
-}: {
-  runId: string;
-  artifacts: { artifact_id: string; kind: string; content_type: string | null; size_bytes: number; created_at: string }[];
-  loading: boolean;
-  error: boolean;
-}) {
-  if (loading) return <div className="card mb-4 text-sm text-muted">{t('common.loading')}</div>;
-  if (error) return <ErrorBox>{t('analysis.artifacts_failed')}</ErrorBox>;
-
-  return (
-    <div className="card mb-4">
-      <div className="text-sm font-semibold mb-3">{t('analysis.artifacts')}</div>
-      {artifacts.length === 0 ? (
-        <div className="text-sm text-muted">{t('analysis.artifacts_empty')}</div>
-      ) : (
-        <div className="space-y-2">
-          {artifacts.map((artifact) => (
-            <a
-              key={artifact.artifact_id}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border px-3 py-2 hover:border-[#ff4b4b]/70"
-              href={runsApi.artifactUrl(runId, artifact.artifact_id)}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <span>
-                <span className="font-medium">{artifact.kind}</span>
-                <span className="ml-2 text-xs text-muted font-mono">{artifact.artifact_id}</span>
-              </span>
-              <span className="text-xs text-muted">{formatBytes(artifact.size_bytes)}</span>
-            </a>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+// True when every non-empty English report section has a translation for
+// `lang` (or when lang is English, which needs none). Drives both the poll
+// stop condition and the "translating" hint.
+function translationComplete(data: RunResult, lang: string): boolean {
+  if (lang === 'en') return true;
+  const translated = data.reports_i18n?.[lang] ?? {};
+  const expected = Object.entries(data.reports ?? {})
+    .filter(([, v]) => typeof v === 'string' && (v as string).trim().length > 0)
+    .map(([k]) => k);
+  return expected.every((k) => typeof translated[k] === 'string');
 }
