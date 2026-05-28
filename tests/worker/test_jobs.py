@@ -310,7 +310,12 @@ def test_celery_app_registers_analysis_task():
     script = (
         "from tradingagents.worker.celery_app import celery_app;"
         "celery_app.loader.import_default_modules();"
-        "assert 'tradingagents.worker.jobs.run_analysis_task' in celery_app.tasks"
+        "expected = {"
+        "'tradingagents.worker.jobs.run_analysis_task',"
+        "'tradingagents.worker.queue_tasks.dispatch_queued_runs_task',"
+        "'tradingagents.worker.queue_tasks.sweep_stale_runs_task',"
+        "};"
+        "assert expected.issubset(celery_app.tasks)"
     )
 
     result = subprocess.run(
@@ -321,6 +326,15 @@ def test_celery_app_registers_analysis_task():
     )
 
     assert result.returncode == 0, result.stderr
+
+
+def test_celery_app_uses_queue_safe_worker_defaults():
+    assert celery_app.conf.worker_prefetch_multiplier == 1
+    assert celery_app.conf.task_acks_late is True
+    assert celery_app.conf.task_reject_on_worker_lost is True
+    assert celery_app.conf.broker_connection_retry_on_startup is True
+    assert "dispatch-queued-analysis-runs" in celery_app.conf.beat_schedule
+    assert "sweep-stale-analysis-runs" in celery_app.conf.beat_schedule
 
 
 def test_run_tradingagents_analysis_decrypts_user_api_key_snapshot(monkeypatch, tmp_path):

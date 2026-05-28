@@ -1,4 +1,58 @@
 services:
+  api:
+    build: .
+    entrypoint: ""
+    command: >
+      sh -lc "python -c 'from tradingagents.api.db import init_db; init_db()' &&
+      uvicorn tradingagents.api.app:app --host 0.0.0.0 --port 8000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql+psycopg://tradingagents:tradingagents@postgres:5432/tradingagents}
+      REDIS_URL: ${DOCKER_REDIS_URL:-redis://redis:6379/0}
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - "8000:8000"
+    volumes:
+      - tradingagents_data:/home/appuser/.tradingagents
+
+  worker:
+    build: .
+    entrypoint: ""
+    command: >
+      sh -lc "celery -A tradingagents.worker.celery_app worker
+      --loglevel=info
+      --concurrency=${TRADINGAGENTS_WORKER_CONCURRENCY:-5}
+      --prefetch-multiplier=1"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql+psycopg://tradingagents:tradingagents@postgres:5432/tradingagents}
+      REDIS_URL: ${DOCKER_REDIS_URL:-redis://redis:6379/0}
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - tradingagents_data:/home/appuser/.tradingagents
+
+  beat:
+    build: .
+    entrypoint: ""
+    command: >
+      celery -A tradingagents.worker.celery_app beat --loglevel=info
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql+psycopg://tradingagents:tradingagents@postgres:5432/tradingagents}
+      REDIS_URL: ${DOCKER_REDIS_URL:-redis://redis:6379/0}
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - tradingagents_data:/home/appuser/.tradingagents
+
   tradingagents:
     build: .
     env_file:

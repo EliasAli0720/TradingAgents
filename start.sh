@@ -20,6 +20,7 @@ RUN_DIR="${TRADINGAGENTS_RUN_DIR:-$HOME/.tradingagents/run}"
 LOG_DIR="${TRADINGAGENTS_LOG_DIR:-$HOME/.tradingagents/logs}"
 API_HOST="${TRADINGAGENTS_API_HOST:-0.0.0.0}"
 API_PORT="${TRADINGAGENTS_API_PORT:-8000}"
+WORKER_CONCURRENCY="${TRADINGAGENTS_WORKER_CONCURRENCY:-5}"
 
 # 加载 .env
 if [ -f "$SCRIPT_DIR/.env" ]; then
@@ -177,14 +178,22 @@ start_api_stack() {
     tradingagents-worker \
     "$VENV_PYTHON" -m celery -A tradingagents.worker.celery_app worker \
       --loglevel=info \
-      --concurrency=1
+      --concurrency="$WORKER_CONCURRENCY" \
+      --prefetch-multiplier=1
+
+  start_background_process \
+    tradingagents-beat \
+    "$VENV_PYTHON" -m celery -A tradingagents.worker.celery_app beat \
+      --loglevel=info \
+      --schedule="$RUN_DIR/celerybeat-schedule"
 
   echo "[INFO] 本地 API 全套已启动"
   echo "       API:    http://127.0.0.1:${API_PORT}"
   echo "       DB:     ${DATABASE_URL}"
   echo "       Redis:  ${REDIS_URL}"
+  echo "       Worker: concurrency=${WORKER_CONCURRENCY}, prefetch=1"
   echo "       Logs:   $LOG_DIR"
-  echo "[INFO] 当前脚本保持前台运行。按 Ctrl-C 会停止 API/worker，保留 PostgreSQL/Redis 容器。"
+  echo "[INFO] 当前脚本保持前台运行。按 Ctrl-C 会停止 API/worker/beat，保留 PostgreSQL/Redis 容器。"
 
   trap stop_api_stack INT TERM EXIT
   wait "$(cat "$RUN_DIR/tradingagents-api.pid")"
@@ -192,6 +201,7 @@ start_api_stack() {
 
 stop_api_stack() {
   mkdir -p "$RUN_DIR" "$LOG_DIR"
+  stop_background_process tradingagents-beat
   stop_background_process tradingagents-worker
   stop_background_process tradingagents-api
   echo "[INFO] PostgreSQL/Redis 容器仍保留运行。如需停止：docker compose stop postgres redis"
@@ -201,6 +211,7 @@ status_api_stack() {
   mkdir -p "$RUN_DIR" "$LOG_DIR"
   show_background_status tradingagents-api
   show_background_status tradingagents-worker
+  show_background_status tradingagents-beat
   docker compose ps postgres redis
 }
 

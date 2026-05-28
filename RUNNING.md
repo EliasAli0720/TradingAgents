@@ -257,6 +257,23 @@ cp .env.example .env  # 先填密钥
 docker compose run --rm tradingagents
 ```
 
+### 6.1 用 Docker 跑分析 API 队列栈
+
+```bash
+docker compose up -d postgres redis api worker beat
+docker compose logs -f api worker beat
+```
+
+默认暴露 API：`http://localhost:8000`。`api` 容器启动前会执行一次 `init_db()`，`beat` 负责周期性调度 queued run，`worker` 负责实际执行分析任务。
+
+调 worker 并发：
+
+```bash
+TRADINGAGENTS_WORKER_CONCURRENCY=10 docker compose up -d --scale worker=10 worker
+```
+
+上面表示 10 个 worker 容器、每个容器 10 个执行槽，总槽位 100。只有在 provider quota、数据库连接池和机器资源都准备好时才这样配置；否则保持单容器 5 并发更稳。
+
 本地 Ollama 模型：
 
 ```bash
@@ -265,7 +282,7 @@ docker compose --profile ollama run --rm tradingagents-ollama
 
 数据卷 `tradingagents_data` 挂在容器内 `/home/appuser/.tradingagents`，跨容器保留 memory log、checkpoint **以及 users.db**。
 
-### 6.1 用 Docker 跑仪表盘（含登录页）
+### 6.2 用 Docker 跑仪表盘（含登录页）
 
 当前 `Dockerfile` 的 `ENTRYPOINT` 是 CLI (`tradingagents`)，跑 dashboard 时覆盖一下即可：
 
@@ -388,7 +405,12 @@ server {
 ### 分析 HTTP API 部署补充（`tradingagents.api`）
 
 - **环境区分**：本地开发使用 `TRADINGAGENTS_API_ENV=development`，宿主机进程连接 `DATABASE_URL=postgresql+psycopg://tradingagents:tradingagents@localhost:5432/tradingagents` 和 `REDIS_URL=redis://localhost:6379/0`；Docker Compose 容器内通过 `DOCKER_DATABASE_URL` / `DOCKER_REDIS_URL` 连接服务名 `postgres` / `redis`；生产使用 `TRADINGAGENTS_API_ENV=production` 并显式提供生产 PostgreSQL/Redis 连接。
-- **本地一键启动**：运行 `./start.sh api` 会启动 Docker PostgreSQL/Redis、初始化 PostgreSQL 表，并启动 FastAPI 与 Celery worker。脚本保持前台运行；按 `Ctrl-C` 会停止 API/worker，保留数据库容器。另一个终端可运行 `./start.sh api-status` 查看状态，或 `./start.sh api-stop` 停止 API/worker。
+- **本地一键启动**：运行 `./start.sh api` 会启动 Docker PostgreSQL/Redis、初始化 PostgreSQL 表，并启动 FastAPI、Celery worker、Celery beat。脚本保持前台运行；按 `Ctrl-C` 会停止 API/worker/beat，保留数据库容器。另一个终端可运行 `./start.sh api-status` 查看状态，或 `./start.sh api-stop` 停止 API/worker/beat。
+- **队列调度**：`POST /runs` 只入库为 `queued`，Celery beat 每 `TRADINGAGENTS_DISPATCH_INTERVAL_SECONDS` 秒触发 dispatcher，把任务从 `queued` 迁到 `dispatching` 并投递给 worker。worker 开始执行后状态变为 `running`，完成后变为 `succeeded/failed/cancelled`。
+- **并发容量**：默认 `TRADINGAGENTS_MAX_RUNNING_SYSTEM=100`、`TRADINGAGENTS_MAX_RUNNING_PER_USER=5`、`TRADINGAGENTS_MAX_QUEUED_PER_USER=50`。系统容量按 `dispatching + running` 计数，单用户超过 5 个 active run 后继续创建的 run 会排队；超过 backlog 上限会返回 `429`。
+- **worker 并发**：本地 `./start.sh api` 默认 `TRADINGAGENTS_WORKER_CONCURRENCY=5`，且 `prefetch=1`，避免单个 worker 预取太多任务导致用户间不公平。生产要支撑 100 个系统并发时，不建议单机单 worker 开到 100；按机器资源横向扩多个 worker，使所有 worker 的 concurrency 总和约等于系统容量，并持续观察 provider 限流、CPU、内存、数据库连接数。
+- **provider 限流**：worker 并发只是本地执行槽位；外部模型 provider 还有单独并发门控，避免 100 个 run 同时打爆同一个 provider。调大系统并发前先确认 provider quota、API key 额度和失败重试策略。
+- **租约与心跳**：dispatcher 给 `dispatching` run 设置 lease；worker 执行中定期写 heartbeat。Celery beat 会周期运行 sweeper，过期的 `dispatching` 会回到 `queued`，心跳过期的 `running` 会按剩余 attempts 重排或标记失败。
 - **必须走 HTTPS**：API 下发的 `tradingagents_session` cookie 默认 `Secure`，明文 HTTP 下浏览器会丢弃；本地开发可暂时 `TRADINGAGENTS_API_COOKIE_SECURE=false`，生产**禁止关闭**。
 - **CSRF**：状态变更（`POST/PATCH/DELETE`）必须同时携带 cookie `tradingagents_csrf` 与请求头 `X-CSRF-Token`，二者字符串相等。前端 JS 可读 csrf cookie，session cookie 是 `HttpOnly` 拿不到。
 - **首位注册即 admin**：表内零用户时 `POST /auth/register` 自动赋 `admin`，其后默认 `viewer`，需 admin 通过 `PATCH /admin/users/{id}` 提升。
