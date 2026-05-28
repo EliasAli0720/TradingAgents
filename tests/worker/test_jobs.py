@@ -125,6 +125,43 @@ def test_execute_analysis_run_success_writes_result():
     ]
 
 
+def test_successful_worker_persists_report_artifact_metadata():
+    session, repo = _repo()
+    run = repo.create_run(
+        "NVDA",
+        date(2026, 1, 15),
+        "stock",
+        ["market"],
+        user_id="usr_1",
+        llm_config=LLM_CONFIG,
+    )
+    _dispatch_run(repo, run.run_id)
+    session.commit()
+
+    def fake_executor(*args, **kwargs):
+        return {
+            "decision": "Hold",
+            "reports": {"final_trade_decision": "Rating: Hold"},
+            "final_state": {
+                "company_of_interest": "NVDA",
+                "final_trade_decision": "Rating: Hold",
+            },
+            "artifacts": [
+                {
+                    "kind": "report_md",
+                    "storage_key": f"{run.run_id}/reports/complete_report.md",
+                }
+            ],
+        }
+
+    execute_analysis_run(repo, run.run_id, fake_executor)
+    session.commit()
+
+    artifacts = repo.list_artifacts(run.run_id)
+    assert [artifact.kind for artifact in artifacts] == ["report_md"]
+    assert artifacts[0].storage_key == f"{run.run_id}/reports/complete_report.md"
+
+
 def test_execute_analysis_run_requires_dispatched_run():
     session, repo = _repo()
     run = repo.create_run(
@@ -377,6 +414,42 @@ def test_run_tradingagents_analysis_writes_markdown_report(monkeypatch, tmp_path
     assert (run_dirs[0] / "2_research" / "manager.md").read_text(encoding="utf-8") == "research manager body"
     assert (run_dirs[0] / "3_trading" / "trader.md").read_text(encoding="utf-8") == "trader body"
     assert (run_dirs[0] / "5_portfolio" / "decision.md").read_text(encoding="utf-8") == "portfolio body"
+
+
+def test_run_tradingagents_analysis_with_run_id_writes_isolated_artifacts(
+    monkeypatch,
+    tmp_path,
+):
+    reports_dir = tmp_path / "reports"
+    monkeypatch.setitem(
+        sys.modules["tradingagents.worker.analysis"].DEFAULT_CONFIG,
+        "reports_dir",
+        str(reports_dir),
+    )
+
+    class FakeGraph:
+        def __init__(self, selected_analysts, config):
+            pass
+
+        def propagate(self, ticker, trade_date, asset_type):
+            return ({"final_trade_decision": "Rating: Hold"}, "Hold")
+
+    monkeypatch.setattr("tradingagents.worker.analysis.TradingAgentsGraph", FakeGraph)
+
+    output = run_tradingagents_analysis(
+        "NVDA",
+        date(2026, 1, 15),
+        "stock",
+        ["market"],
+        LLM_CONFIG,
+        run_id="run_artifacts",
+    )
+
+    storage_keys = [artifact.storage_key for artifact in output["artifacts"]]
+    assert "run_artifacts/reports/complete_report.md" in storage_keys
+    assert (
+        reports_dir / "run_artifacts" / "reports" / "complete_report.md"
+    ).read_text(encoding="utf-8").startswith("# Trading Analysis Report: NVDA")
 
 
 def test_trading_graph_provider_kwargs_include_snapshot_api_key():

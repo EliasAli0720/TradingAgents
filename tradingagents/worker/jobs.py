@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import date
+from inspect import Parameter, signature
 from typing import Any
 
 from tradingagents.api.db import SessionLocal
@@ -13,6 +14,36 @@ from tradingagents.worker.heartbeat import heartbeat
 
 
 AnalysisExecutor = Callable[[str, date, str, list[str], dict[str, Any]], dict[str, Any]]
+
+
+def _execute_with_optional_run_id(
+    executor: AnalysisExecutor,
+    *,
+    run_id: str,
+    ticker: str,
+    trade_date: date,
+    asset_type: str,
+    analysts: list[str],
+    llm_config: dict[str, Any],
+) -> dict[str, Any]:
+    try:
+        parameters = signature(executor).parameters.values()
+    except (TypeError, ValueError):
+        parameters = ()
+    accepts_run_id = any(
+        parameter.kind == Parameter.VAR_KEYWORD or parameter.name == "run_id"
+        for parameter in parameters
+    )
+    if accepts_run_id:
+        return executor(
+            ticker,
+            trade_date,
+            asset_type,
+            analysts,
+            llm_config,
+            run_id=run_id,
+        )
+    return executor(ticker, trade_date, asset_type, analysts, llm_config)
 
 
 def execute_analysis_run(
@@ -46,21 +77,25 @@ def execute_analysis_run(
         )
         repo.session.commit()
         if heartbeat_interval_seconds is None:
-            output = executor(
-                run.ticker,
-                run.trade_date,
-                run.asset_type,
-                run.analysts,
-                run.llm_config,
+            output = _execute_with_optional_run_id(
+                executor,
+                run_id=run_id,
+                ticker=run.ticker,
+                trade_date=run.trade_date,
+                asset_type=run.asset_type,
+                analysts=run.analysts,
+                llm_config=run.llm_config,
             )
         else:
             with heartbeat(run_id, heartbeat_interval_seconds):
-                output = executor(
-                    run.ticker,
-                    run.trade_date,
-                    run.asset_type,
-                    run.analysts,
-                    run.llm_config,
+                output = _execute_with_optional_run_id(
+                    executor,
+                    run_id=run_id,
+                    ticker=run.ticker,
+                    trade_date=run.trade_date,
+                    asset_type=run.asset_type,
+                    analysts=run.analysts,
+                    llm_config=run.llm_config,
                 )
         repo.session.refresh(run)
         if run.status == "cancelled":
@@ -80,6 +115,8 @@ def execute_analysis_run(
             reports=output["reports"],
             final_state=output["final_state"],
         )
+        for artifact in output.get("artifacts") or []:
+            repo.add_artifact(run_id, artifact)
         repo.session.commit()
     except Exception as exc:
         repo.session.rollback()

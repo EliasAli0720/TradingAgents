@@ -2,12 +2,18 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 from typing import Any, Optional
+from dataclasses import asdict, is_dataclass
 from uuid import uuid4
 
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.orm import Session
 
-from tradingagents.api.models import AnalysisRun, AnalysisRunEvent, AnalysisRunResult
+from tradingagents.api.models import (
+    AnalysisRun,
+    AnalysisRunArtifact,
+    AnalysisRunEvent,
+    AnalysisRunResult,
+)
 
 
 ACTIVE_STATUSES = {"dispatching", "running"}
@@ -315,6 +321,37 @@ class AnalysisRunRepository:
         run.updated_at = now
         self.add_event(run_id, "run_failed", {"run_id": run_id, "error": error})
         return run
+
+    def add_artifact(self, run_id: str, artifact: Any) -> AnalysisRunArtifact:
+        if is_dataclass(artifact):
+            data = asdict(artifact)
+        else:
+            data = dict(artifact)
+
+        now = utcnow()
+        row = AnalysisRunArtifact(
+            artifact_id=new_run_id().replace("run_", "art_", 1),
+            run_id=run_id,
+            kind=data["kind"],
+            storage_backend=data.get("storage_backend", "local"),
+            storage_key=data["storage_key"],
+            content_type=data.get("content_type"),
+            size_bytes=int(data.get("size_bytes") or 0),
+            sha256=data.get("sha256"),
+            created_at=now,
+        )
+        self.session.add(row)
+        return row
+
+    def list_artifacts(self, run_id: str) -> list[AnalysisRunArtifact]:
+        if self.user_id is not None and self.get_run(run_id) is None:
+            return []
+        stmt = (
+            select(AnalysisRunArtifact)
+            .where(AnalysisRunArtifact.run_id == run_id)
+            .order_by(AnalysisRunArtifact.created_at.asc(), AnalysisRunArtifact.artifact_id.asc())
+        )
+        return list(self.session.scalars(stmt))
 
     def record_progress(
         self,
