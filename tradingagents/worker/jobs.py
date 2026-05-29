@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from datetime import date
 from inspect import Parameter, signature
@@ -25,6 +26,47 @@ from tradingagents.worker.heartbeat import heartbeat
 
 
 AnalysisExecutor = Callable[..., dict[str, Any]]
+
+logger = logging.getLogger(__name__)
+
+
+def _maybe_autopropose(session, run_id: str, run) -> None:
+    """Optionally create a pending trade proposal from a succeeded run.
+
+    Gated by IBKR_AUTO_PROPOSE (default off). Best-effort — never fails the run.
+    """
+    from tradingbot.config import TRADINGBOT_CONFIG as config
+
+    if not config.get("ibkr_auto_propose"):
+        return
+    try:
+        from tradingagents.api.broker_repository import BrokerRepository
+        from tradingagents.api.deps import get_redis_client
+        from tradingbot.services.trade_proposal import build_proposal_builder
+
+        result = session.get(AnalysisRunResult, run_id)
+        if result is None:
+            return
+        redis_client = get_redis_client()
+        if redis_client is None:
+            return
+        builder = build_proposal_builder(config, redis_client)
+        outcome = builder.build(
+            repo=BrokerRepository(session),
+            requested_by_user_id=run.user_id,
+            ticker=run.ticker,
+            signal=result.decision,
+            run_id=run_id,
+        )
+        session.commit()
+        logger.info(
+            "Auto-propose for run %s (%s): %s",
+            run_id,
+            run.ticker,
+            "created" if outcome.created else outcome.reason,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("Auto-propose failed for run %s", run_id)
 
 
 def _execute_with_optional_run_id(
@@ -274,3 +316,6 @@ def run_analysis_task(run_id: str) -> None:
                     translate_section_task.apply_async(
                         args=(run_id, target_lang, section, text)
                     )
+
+        if run is not None and run.status == "succeeded":
+            _maybe_autopropose(repo.session, run_id, run)

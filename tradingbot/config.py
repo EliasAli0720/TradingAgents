@@ -12,14 +12,40 @@ TRADINGBOT_CONFIG = {
     # Broker                                                               #
     # ------------------------------------------------------------------ #
     # "alpaca" → AlpacaBroker (requires ALPACA_API_KEY / ALPACA_API_SECRET)
+    # "ibkr"   → IBKRBroker   (TWS API socket; needs a logged-in TWS / IB Gateway)
     # "mock"   → MockBroker   (no credentials needed, safe for testing)
     "broker": os.getenv("TRADINGBOT_BROKER", "mock"),
 
-    # Set to False ONLY when you are ready for live money.
-    "paper_trading": os.getenv("ALPACA_PAPER", "true").lower() != "false",
+    # Broker-agnostic paper flag. Set to False ONLY when ready for live money.
+    # Driven by IBKR_PAPER for the ibkr broker, else ALPACA_PAPER.
+    "paper_trading": os.getenv(
+        "IBKR_PAPER"
+        if os.getenv("TRADINGBOT_BROKER", "mock").lower() == "ibkr"
+        else "ALPACA_PAPER",
+        "true",
+    ).lower() != "false",
 
     "alpaca_api_key": os.getenv("ALPACA_API_KEY", ""),
     "alpaca_api_secret": os.getenv("ALPACA_API_SECRET", ""),
+
+    # ------------------------------------------------------------------ #
+    # IBKR (TWS API / socket route — single platform account)             #
+    # ------------------------------------------------------------------ #
+    # Connect to a logged-in TWS / IB Gateway on this host. Paper ports:
+    # TWS 7497, IB Gateway 4002 (live: 7496 / 4001).
+    "ibkr_host": os.getenv("IBKR_HOST", "127.0.0.1"),
+    "ibkr_port": int(os.getenv("IBKR_PORT", "7497")),
+    # The connector uses the master client id (0) to receive all order updates.
+    "ibkr_client_id": int(os.getenv("IBKR_CLIENT_ID", "0")),
+    # Specific account to read/trade; blank = primary managed account.
+    "ibkr_account_id": os.getenv("IBKR_ACCOUNT_ID", ""),
+    # Market data: 1 real-time (needs subscription), 3 delayed (free).
+    "ibkr_market_data_type": int(os.getenv("IBKR_MARKET_DATA_TYPE", "3")),
+    # When True, a succeeded analysis run auto-creates a pending trade
+    # proposal; when False (default) proposals are created manually.
+    "ibkr_auto_propose": os.getenv("IBKR_AUTO_PROPOSE", "false").lower() == "true",
+    # Redis list used as the connector command channel.
+    "ibkr_cmd_queue": os.getenv("IBKR_CMD_QUEUE", "ibkr:commands"),
 
     # ------------------------------------------------------------------ #
     # Watchlist                                                            #

@@ -22,7 +22,6 @@ Environment variables (see tradingbot/config.py for full list):
 
 import argparse
 import logging
-import os
 import sys
 
 from dotenv import load_dotenv
@@ -38,16 +37,8 @@ logger = logging.getLogger("run_bot")
 
 
 def build_broker(config: dict):
-    broker_type = config.get("broker", "mock").lower()
-    if broker_type == "alpaca":
-        from tradingbot.broker.alpaca import AlpacaBroker
-        return AlpacaBroker(
-            api_key=config["alpaca_api_key"],
-            api_secret=config["alpaca_api_secret"],
-            paper=config.get("paper_trading", True),
-        )
-    from tradingbot.broker.mock import MockBroker
-    return MockBroker(starting_cash=100_000.0)
+    from tradingbot.broker.factory import build_broker as _build_broker
+    return _build_broker(config, mode="local")
 
 
 def build_trading_graph(config: dict):

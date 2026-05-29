@@ -76,16 +76,8 @@ st.markdown(
 @st.cache_resource
 def _get_broker():
     from tradingbot.config import TRADINGBOT_CONFIG as cfg
-    broker_type = cfg.get("broker", "mock").lower()
-    if broker_type == "alpaca":
-        from tradingbot.broker.alpaca import AlpacaBroker
-        return AlpacaBroker(
-            api_key=cfg["alpaca_api_key"],
-            api_secret=cfg["alpaca_api_secret"],
-            paper=cfg.get("paper_trading", True),
-        )
-    from tradingbot.broker.mock import MockBroker
-    return MockBroker(starting_cash=100_000.0)
+    from tradingbot.broker.factory import build_broker
+    return build_broker(cfg, mode="local")
 
 
 @st.cache_resource

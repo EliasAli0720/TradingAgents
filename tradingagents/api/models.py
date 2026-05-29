@@ -281,3 +281,123 @@ class LLMModelOption(Base):
         UniqueConstraint("provider_id", "mode", "model_id", name="uq_llm_model_option"),
         Index("idx_llm_model_options_provider_mode_order", "provider_id", "mode", "sort_order"),
     )
+
+
+# --------------------------------------------------------------------------- #
+# Broker integration (IBKR TWS API, single platform account)                  #
+#                                                                             #
+# These mirror the platform broker state written by the IBKR connector and    #
+# the trade approval / order lifecycle. See                                   #
+# docs/superpowers/specs/2026-05-29-ibkr-tws-api-integration-design.md         #
+# --------------------------------------------------------------------------- #
+
+
+class BrokerStatus(Base):
+    """Singleton row holding the platform broker connection health.
+
+    Written by the connector; read by /broker/status. One row, id="platform".
+    """
+
+    __tablename__ = "broker_status"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    broker: Mapped[str] = mapped_column(String, nullable=False, default="ibkr")
+    gateway_online: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    brokerage_session: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    account_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    paper: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    last_refresh_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+
+
+class TradeApproval(Base):
+    """An agent-generated (or manual) trade proposal awaiting human approval.
+
+    status: pending -> approved -> submitted | failed; pending -> rejected;
+    pending -> expired.
+    """
+
+    __tablename__ = "trade_approvals"
+
+    approval_id: Mapped[str] = mapped_column(String, primary_key=True)
+    run_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
+    requested_by_user_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    ticker: Mapped[str] = mapped_column(String, nullable=False)
+    conid: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    side: Mapped[str] = mapped_column(String, nullable=False)
+    order_type: Mapped[str] = mapped_column(String, nullable=False)
+    quantity: Mapped[float] = mapped_column(Float, nullable=False)
+    limit_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    time_in_force: Mapped[str] = mapped_column(String, nullable=False, default="day")
+    estimated_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    estimated_value: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    whatif_init_margin: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    whatif_commission: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    risk_verdict: Mapped[Optional[dict[str, Any]]] = mapped_column(JsonType, nullable=True)
+    agent_reasoning: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(
+        String, nullable=False, default="pending", index=True
+    )
+    approved_by_user_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    approved_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    submitted_order_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+
+    __table_args__ = (
+        Index(
+            "idx_trade_approvals_user_status_created",
+            "requested_by_user_id",
+            "status",
+            "created_at",
+        ),
+    )
+
+
+class BrokerOrder(Base):
+    """Mirror of an order placed at IBKR, kept in sync by the connector."""
+
+    __tablename__ = "broker_orders"
+
+    broker_order_id: Mapped[str] = mapped_column(String, primary_key=True)
+    approval_id: Mapped[Optional[str]] = mapped_column(
+        String,
+        ForeignKey("trade_approvals.approval_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    requested_by_user_id: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True, index=True
+    )
+    account_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    ticker: Mapped[str] = mapped_column(String, nullable=False)
+    conid: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    side: Mapped[str] = mapped_column(String, nullable=False)
+    order_type: Mapped[str] = mapped_column(String, nullable=False)
+    quantity: Mapped[float] = mapped_column(Float, nullable=False)
+    limit_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    time_in_force: Mapped[str] = mapped_column(String, nullable=False, default="day")
+    status: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    filled_qty: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    filled_avg_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    submitted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+    raw_event: Mapped[Optional[dict[str, Any]]] = mapped_column(JsonType, nullable=True)
+
+    __table_args__ = (Index("idx_broker_orders_updated_at", "updated_at"),)
