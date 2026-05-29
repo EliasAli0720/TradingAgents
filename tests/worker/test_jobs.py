@@ -456,7 +456,7 @@ def test_run_tradingagents_analysis_decrypts_user_api_key_snapshot(monkeypatch, 
     captured_configs = []
 
     class FakeGraph:
-        def __init__(self, selected_analysts, config):
+        def __init__(self, selected_analysts, config, context=None):
             captured_configs.append((selected_analysts, config))
 
         def propagate(self, ticker, trade_date, asset_type):
@@ -481,6 +481,45 @@ def test_run_tradingagents_analysis_decrypts_user_api_key_snapshot(monkeypatch, 
     assert captured_configs[0][1]["api_key"] == "sk-user-abcdef123456"
 
 
+def test_run_tradingagents_analysis_passes_context_to_graph(monkeypatch, tmp_path):
+    from tradingagents.worker.cancellation import CancellationToken
+    from tradingagents.worker.context import RunContext
+
+    monkeypatch.setitem(
+        sys.modules["tradingagents.worker.analysis"].DEFAULT_CONFIG,
+        "reports_dir",
+        str(tmp_path / "reports"),
+    )
+    captured = {}
+    context = RunContext(
+        run_id="run_ctx",
+        user_id="usr_1",
+        cancellation_token=CancellationToken(lambda: False),
+    )
+
+    class FakeGraph:
+        def __init__(self, selected_analysts, config, context=None):
+            captured["selected_analysts"] = selected_analysts
+            captured["context"] = context
+
+        def propagate(self, ticker, trade_date, asset_type):
+            return ({"final_trade_decision": "Hold"}, "Hold")
+
+    monkeypatch.setattr("tradingagents.worker.analysis.TradingAgentsGraph", FakeGraph)
+
+    run_tradingagents_analysis(
+        "NVDA",
+        date(2026, 1, 15),
+        "stock",
+        ["market"],
+        LLM_CONFIG,
+        context=context,
+    )
+
+    assert captured["selected_analysts"] == ["market"]
+    assert captured["context"] is context
+
+
 def test_run_tradingagents_analysis_writes_markdown_report(monkeypatch, tmp_path):
     reports_dir = tmp_path / "reports"
     monkeypatch.setitem(
@@ -490,7 +529,7 @@ def test_run_tradingagents_analysis_writes_markdown_report(monkeypatch, tmp_path
     )
 
     class FakeGraph:
-        def __init__(self, selected_analysts, config):
+        def __init__(self, selected_analysts, config, context=None):
             pass
 
         def propagate(self, ticker, trade_date, asset_type):
@@ -552,7 +591,7 @@ def test_run_tradingagents_analysis_with_run_id_writes_isolated_artifacts(
     )
 
     class FakeGraph:
-        def __init__(self, selected_analysts, config):
+        def __init__(self, selected_analysts, config, context=None):
             pass
 
         def propagate(self, ticker, trade_date, asset_type):

@@ -10,6 +10,7 @@ from tradingagents.api.serialization import extract_reports, json_safe_state
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.reports import save_analysis_report
+from tradingagents.worker.context import RunContext
 
 
 def run_tradingagents_analysis(
@@ -21,6 +22,7 @@ def run_tradingagents_analysis(
     *,
     run_id: str | None = None,
     on_section=None,
+    context: RunContext | None = None,
 ) -> dict[str, Any]:
     config = deepcopy(DEFAULT_CONFIG)
     config.update(
@@ -33,7 +35,7 @@ def run_tradingagents_analysis(
     )
     if llm_config.get("api_key_encrypted"):
         config["api_key"] = decrypt_secret(llm_config["api_key_encrypted"])
-    graph = TradingAgentsGraph(selected_analysts=analysts, config=config)
+    graph = TradingAgentsGraph(selected_analysts=analysts, config=config, context=context)
     propagate_kwargs: dict[str, Any] = {"asset_type": asset_type}
     if on_section is not None:
         propagate_kwargs["on_section_ready"] = on_section
