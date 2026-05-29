@@ -64,6 +64,30 @@ def test_case_insensitive_lookup():
     assert get_api_key_env("QWEN-CN") == "DASHSCOPE_CN_API_KEY"
 
 
+def test_openai_compatible_client_prefers_user_api_key_when_env_missing(monkeypatch):
+    """Saved per-user keys must work without service-level provider env vars."""
+    import tradingagents.llm_clients.openai_client as openai_client
+
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    captured = {}
+
+    class _FakeDeepSeekChatOpenAI:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr(openai_client, "DeepSeekChatOpenAI", _FakeDeepSeekChatOpenAI)
+
+    llm = openai_client.OpenAIClient(
+        model="deepseek-v4-flash",
+        provider="deepseek",
+        api_key="sk-user-abcdef123456",
+    ).get_llm()
+
+    assert isinstance(llm, _FakeDeepSeekChatOpenAI)
+    assert captured["api_key"] == "sk-user-abcdef123456"
+    assert captured["base_url"] == "https://api.deepseek.com"
+
+
 # ---- ensure_api_key behavior ---------------------------------------------
 
 

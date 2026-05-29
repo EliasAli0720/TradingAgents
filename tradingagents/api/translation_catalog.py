@@ -32,23 +32,23 @@ TRANSLATION_PROVIDERS: list[TranslationProviderOption] = [
     ),
     TranslationProviderOption(
         provider_id="deepseek",
-        # Official DeepSeek API exposes V3 via the model id "deepseek-chat"
-        # (now backed by V3.2). There is no "deepseek-v3" id. OpenAI-compatible
-        # endpoint; the SDK appends /chat/completions to this base.
+        # Official DeepSeek API currently exposes V4 models directly. The
+        # legacy aliases deepseek-chat/deepseek-reasoner are scheduled for
+        # deprecation and now map to V4 Flash, so avoid them for new settings.
         label="DeepSeek",
-        model_id="deepseek-chat",
-        model_label="DeepSeek V3.2 (deepseek-chat)",
+        model_id="deepseek-v4-flash",
+        model_label="DeepSeek V4 Flash",
         default_backend_url="https://api.deepseek.com",
     ),
     TranslationProviderOption(
         provider_id="google",
         # Native Gemini Developer API via langchain_google_genai. Leave the
-        # base URL empty: the SDK targets generativelanguage.googleapis.com and
-        # appends /v1beta/models/... itself. Passing a /v1beta-suffixed URL
-        # double-prefixes the path and 404s.
+        # stored backend URL empty: the SDK targets Google's Generative
+        # Language endpoint and appends /v1beta/models/{model}:generateContent
+        # itself. Persisting a /v1beta-suffixed URL causes bad request paths.
         label="Google",
-        model_id="gemini-2.5-pro",
-        model_label="Gemini 2.5 Pro",
+        model_id="gemini-2.5-flash-lite",
+        model_label="Gemini 2.5 Flash-Lite",
         default_backend_url=None,
     ),
 ]

@@ -424,8 +424,8 @@ def test_translation_options_lists_three_models():
     providers = resp.json()["providers"]
     models = {(p["id"], p["model_id"]) for p in providers}
     assert ("openai", "gpt-4o-mini") in models
-    assert ("deepseek", "deepseek-chat") in models
-    assert ("google", "gemini-2.5-pro") in models
+    assert ("deepseek", "deepseek-v4-flash") in models
+    assert ("google", "gemini-2.5-flash-lite") in models
 
 
 def test_translation_settings_crud_and_validation():
@@ -440,7 +440,7 @@ def test_translation_settings_crud_and_validation():
         "/settings/translation",
         json={
             "llm_provider": "deepseek",
-            "model": "deepseek-chat",
+            "model": "deepseek-v4-flash",
             "backend_url": "https://api.deepseek.com",
             "api_key": "sk-translate-123456",
         },
@@ -449,14 +449,14 @@ def test_translation_settings_crud_and_validation():
     assert r.status_code == 200
     body = r.json()
     assert body["llm_provider"] == "deepseek"
-    assert body["model"] == "deepseek-chat"
+    assert body["model"] == "deepseek-v4-flash"
     assert body["has_api_key"] is True
     assert body["api_key_masked"] and "sk-translate-123456" not in body["api_key_masked"]
 
     # Invalid provider/model combo is rejected
     bad = client.put(
         "/settings/translation",
-        json={"llm_provider": "openai", "model": "deepseek-chat"},
+        json={"llm_provider": "openai", "model": "deepseek-v4-flash"},
         headers={"X-CSRF-Token": csrf},
     )
     assert bad.status_code == 422

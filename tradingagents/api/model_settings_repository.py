@@ -26,6 +26,8 @@ class UserModelSettingsRepository:
         api_key: Optional[str] = None,
     ) -> UserModelSetting:
         now = utcnow()
+        if llm_provider == "google":
+            backend_url = None
         encrypted_api_key = encrypt_secret(api_key) if api_key else None
         settings = self.get(user_id)
         if settings is None:

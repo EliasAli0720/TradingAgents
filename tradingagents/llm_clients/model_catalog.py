@@ -153,14 +153,14 @@ MODEL_OPTIONS: ProviderModeOptions = {
     },
     "deepseek": {
         "quick": [
-            ("DeepSeek V4 Flash - Latest V4 fast model", "deepseek-v4-flash"),
-            ("DeepSeek V3.2", "deepseek-chat"),
+            ("DeepSeek V4 Flash - Current fast model", "deepseek-v4-flash"),
+            ("DeepSeek legacy alias - maps to V4 Flash, deprecated 2026-07-24", "deepseek-chat"),
             ("Custom model ID", "custom"),
         ],
         "deep": [
-            ("DeepSeek V4 Pro - Latest V4 flagship model", "deepseek-v4-pro"),
-            ("DeepSeek V3.2 (thinking)", "deepseek-reasoner"),
-            ("DeepSeek V3.2", "deepseek-chat"),
+            ("DeepSeek V4 Pro - Current flagship model", "deepseek-v4-pro"),
+            ("DeepSeek V4 Flash - Current fast model", "deepseek-v4-flash"),
+            ("DeepSeek legacy reasoner alias - maps to V4 Flash, deprecated 2026-07-24", "deepseek-reasoner"),
             ("Custom model ID", "custom"),
         ],
     },

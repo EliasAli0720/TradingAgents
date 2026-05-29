@@ -50,9 +50,13 @@ def probe_model(request: ModelProbeRequest) -> ModelProbeResult:
         )
         content = str(getattr(response, "content", response)).strip().lower()
         if "pong" not in content:
+            excerpt = content.replace("\n", " ")[:160] or "<empty>"
             return ModelProbeResult(
                 status="provider_error",
-                message="model responded, but did not return the expected probe text",
+                message=(
+                    "model responded, but did not return the expected probe text: "
+                    f"{excerpt}"
+                ),
             )
         return ModelProbeResult(status="success", message="probe returned pong")
     except Exception as exc:  # noqa: BLE001 - provider SDKs expose inconsistent errors.
