@@ -670,6 +670,62 @@ class _FakeTranslator:
         return f"[{target_lang}] {markdown}"
 
 
+def test_enqueue_translation_if_active_skips_cancelling_run():
+    from tradingagents.worker.jobs import _enqueue_translation_if_active
+
+    session, repo = _repo()
+    run = repo.create_run(
+        "NVDA",
+        date(2026, 1, 15),
+        "stock",
+        ["market"],
+        user_id="usr_1",
+        llm_config=LLM_CONFIG,
+    )
+    run.status = "cancelling"
+    session.commit()
+    calls = []
+
+    _enqueue_translation_if_active(
+        repo,
+        run.run_id,
+        "zh",
+        "market_report",
+        "body",
+        enqueue=lambda **kwargs: calls.append(kwargs["args"]),
+    )
+
+    assert calls == []
+
+
+def test_enqueue_translation_if_active_enqueues_running_run():
+    from tradingagents.worker.jobs import _enqueue_translation_if_active
+
+    session, repo = _repo()
+    run = repo.create_run(
+        "NVDA",
+        date(2026, 1, 15),
+        "stock",
+        ["market"],
+        user_id="usr_1",
+        llm_config=LLM_CONFIG,
+    )
+    run.status = "running"
+    session.commit()
+    calls = []
+
+    _enqueue_translation_if_active(
+        repo,
+        run.run_id,
+        "zh",
+        "market_report",
+        "body",
+        enqueue=lambda **kwargs: calls.append(kwargs["args"]),
+    )
+
+    assert calls == [(run.run_id, "zh", "market_report", "body")]
+
+
 def test_translate_section_stores_translation_and_keeps_english():
     from tradingagents.worker.jobs import translate_section
 

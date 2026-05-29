@@ -208,6 +208,24 @@ def translate_section_task(run_id: str, lang: str, section: str, text: str) -> N
         translate_section(repo, run_id, lang, section, text)
 
 
+def _enqueue_translation_if_active(
+    repo: AnalysisRunRepository,
+    run_id: str,
+    lang: str,
+    section: str,
+    text: str,
+    *,
+    enqueue=None,
+) -> bool:
+    repo.session.expire_all()
+    run = repo.session.get(AnalysisRun, run_id)
+    if run is None or run.status in {"cancelling", "cancelled"}:
+        return False
+    enqueue = enqueue or translate_section_task.apply_async
+    enqueue(args=(run_id, lang, section, text))
+    return True
+
+
 @celery_app.task(name="tradingagents.worker.jobs.run_analysis_task")
 def run_analysis_task(run_id: str) -> None:
     with SessionLocal() as session:
@@ -222,7 +240,7 @@ def run_analysis_task(run_id: str) -> None:
             def on_section(section: str, text: str, _lang=target_lang) -> None:
                 # Translate analyst reports the moment they appear, while the
                 # rest of the pipeline is still running.
-                translate_section_task.apply_async(args=(run_id, _lang, section, text))
+                _enqueue_translation_if_active(repo, run_id, _lang, section, text)
 
         execute_analysis_run(
             repo,
