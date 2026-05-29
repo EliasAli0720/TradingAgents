@@ -30,6 +30,14 @@ def _repo():
     return session, AnalysisRunRepository(session)
 
 
+def _repo_with_session_factory():
+    engine = create_db_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine, future=True)
+    session = Session()
+    return Session, session, AnalysisRunRepository(session)
+
+
 def _dispatch_run(repo: AnalysisRunRepository, run_id: str) -> None:
     repo.claim_next_queued_for_dispatch(
         user_id=repo.require_run(run_id).user_id,
@@ -365,6 +373,46 @@ def test_execute_analysis_run_does_not_overwrite_cancelled_run_after_executor_re
         "run_cancelling",
         "run_cancelled",
     ]
+
+
+def test_execute_analysis_run_stops_when_context_token_sees_cancelling_status():
+    from tradingagents.api.models import AnalysisRun
+
+    Session, session, repo = _repo_with_session_factory()
+    run = repo.create_run(
+        "NVDA",
+        date(2026, 1, 15),
+        "stock",
+        ["market"],
+        user_id="usr_1",
+        llm_config=LLM_CONFIG,
+    )
+    _dispatch_run(repo, run.run_id)
+    session.commit()
+
+    def fake_executor(ticker, trade_date, asset_type, analysts, llm_config, context=None):
+        assert context is not None
+        with Session() as other_session:
+            other_run = other_session.get(AnalysisRun, run.run_id)
+            other_run.status = "cancelling"
+            other_run.error = "user requested cancellation"
+            other_session.commit()
+        context.cancellation_token.raise_if_cancelled()
+        raise AssertionError("executor should have been cancelled")
+
+    execute_analysis_run(
+        repo,
+        run.run_id,
+        fake_executor,
+        cancellation_session_factory=Session,
+    )
+    session.commit()
+
+    saved = repo.get_run(run.run_id)
+    assert saved.status == "cancelled"
+    assert repo.get_result(run.run_id) is None
+    assert "run_failed" not in [e.event_type for e in repo.list_events(run.run_id)]
+    assert repo.list_events(run.run_id)[-1].event_type == "run_cancelled"
 
 
 def test_celery_app_registers_analysis_task():

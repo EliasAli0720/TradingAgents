@@ -7,6 +7,7 @@ from typing import Any
 
 from tradingagents.api.db import SessionLocal
 from tradingagents.api.config import get_api_settings
+from tradingagents.api.memory_repository import AnalysisMemoryRepository
 from tradingagents.api.models import AnalysisRun, AnalysisRunResult, User
 from tradingagents.api.repositories import AnalysisRunRepository
 from tradingagents.api.translation_settings_repository import (
@@ -15,7 +16,7 @@ from tradingagents.api.translation_settings_repository import (
 from tradingagents.translation import build_llm_translator, build_translation_translator
 from tradingagents.worker.analysis import run_tradingagents_analysis
 from tradingagents.worker.celery_app import celery_app
-from tradingagents.worker.cancellation import AnalysisCancelled
+from tradingagents.worker.cancellation import AnalysisCancelled, build_db_cancellation_token
 from tradingagents.worker.context import RunContext
 from tradingagents.worker.heartbeat import heartbeat
 
@@ -57,6 +58,7 @@ def execute_analysis_run(
     executor: AnalysisExecutor = run_tradingagents_analysis,
     heartbeat_interval_seconds: int | None = None,
     on_section=None,
+    cancellation_session_factory=SessionLocal,
 ) -> None:
     run = repo.start_dispatched_run(run_id)
     if run is None:
@@ -82,6 +84,15 @@ def execute_analysis_run(
             message="智能体正在分析行情、新闻、情绪和基本面。",
         )
         repo.session.commit()
+        context = RunContext(
+            run_id=run_id,
+            user_id=run.user_id,
+            memory_store=AnalysisMemoryRepository(repo.session),
+            cancellation_token=build_db_cancellation_token(
+                cancellation_session_factory,
+                run_id,
+            ),
+        )
         if heartbeat_interval_seconds is None:
             output = _execute_with_optional_run_id(
                 executor,
@@ -92,6 +103,7 @@ def execute_analysis_run(
                 analysts=run.analysts,
                 llm_config=run.llm_config,
                 on_section=on_section,
+                context=context,
             )
         else:
             with heartbeat(run_id, heartbeat_interval_seconds):
@@ -104,6 +116,7 @@ def execute_analysis_run(
                     analysts=run.analysts,
                     llm_config=run.llm_config,
                     on_section=on_section,
+                    context=context,
                 )
         repo.session.refresh(run)
         if run.status in {"cancelled", "cancelling"}:
@@ -132,7 +145,7 @@ def execute_analysis_run(
         repo.session.rollback()
         repo.mark_cancelled(run_id, "analysis cancelled")
         repo.session.commit()
-        raise
+        return
     except Exception as exc:
         repo.session.rollback()
         repo.store_failure(run_id, str(exc))
