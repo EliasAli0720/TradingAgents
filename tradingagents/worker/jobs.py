@@ -5,8 +5,12 @@ from datetime import date
 from inspect import Parameter, signature
 from typing import Any
 
+from sqlalchemy.exc import InvalidRequestError
+from sqlalchemy.orm.exc import ObjectDeletedError
+
 from tradingagents.api.db import SessionLocal
 from tradingagents.api.config import get_api_settings
+from tradingagents.api.memory_repository import AnalysisMemoryRepository
 from tradingagents.api.models import AnalysisRun, AnalysisRunResult, User
 from tradingagents.api.repositories import AnalysisRunRepository
 from tradingagents.api.translation_settings_repository import (
@@ -15,11 +19,12 @@ from tradingagents.api.translation_settings_repository import (
 from tradingagents.translation import build_llm_translator, build_translation_translator
 from tradingagents.worker.analysis import run_tradingagents_analysis
 from tradingagents.worker.celery_app import celery_app
-from tradingagents.worker.cancellation import AnalysisCancelled
+from tradingagents.worker.cancellation import AnalysisCancelled, build_db_cancellation_token
+from tradingagents.worker.context import RunContext
 from tradingagents.worker.heartbeat import heartbeat
 
 
-AnalysisExecutor = Callable[[str, date, str, list[str], dict[str, Any]], dict[str, Any]]
+AnalysisExecutor = Callable[..., dict[str, Any]]
 
 
 def _execute_with_optional_run_id(
@@ -32,6 +37,7 @@ def _execute_with_optional_run_id(
     analysts: list[str],
     llm_config: dict[str, Any],
     on_section=None,
+    context: RunContext | None = None,
 ) -> dict[str, Any]:
     try:
         parameters = list(signature(executor).parameters.values())
@@ -44,6 +50,8 @@ def _execute_with_optional_run_id(
         kwargs["run_id"] = run_id
     if on_section is not None and (has_var_kw or "on_section" in names):
         kwargs["on_section"] = on_section
+    if context is not None and (has_var_kw or "context" in names):
+        kwargs["context"] = context
     return executor(ticker, trade_date, asset_type, analysts, llm_config, **kwargs)
 
 
@@ -53,6 +61,7 @@ def execute_analysis_run(
     executor: AnalysisExecutor = run_tradingagents_analysis,
     heartbeat_interval_seconds: int | None = None,
     on_section=None,
+    cancellation_session_factory=SessionLocal,
 ) -> None:
     run = repo.start_dispatched_run(run_id)
     if run is None:
@@ -78,6 +87,15 @@ def execute_analysis_run(
             message="智能体正在分析行情、新闻、情绪和基本面。",
         )
         repo.session.commit()
+        context = RunContext(
+            run_id=run_id,
+            user_id=run.user_id,
+            memory_store=AnalysisMemoryRepository(repo.session),
+            cancellation_token=build_db_cancellation_token(
+                cancellation_session_factory,
+                run_id,
+            ),
+        )
         if heartbeat_interval_seconds is None:
             output = _execute_with_optional_run_id(
                 executor,
@@ -88,6 +106,7 @@ def execute_analysis_run(
                 analysts=run.analysts,
                 llm_config=run.llm_config,
                 on_section=on_section,
+                context=context,
             )
         else:
             with heartbeat(run_id, heartbeat_interval_seconds):
@@ -100,6 +119,7 @@ def execute_analysis_run(
                     analysts=run.analysts,
                     llm_config=run.llm_config,
                     on_section=on_section,
+                    context=context,
                 )
         repo.session.refresh(run)
         if run.status in {"cancelled", "cancelling"}:
@@ -126,9 +146,12 @@ def execute_analysis_run(
         repo.session.commit()
     except AnalysisCancelled:
         repo.session.rollback()
-        repo.mark_cancelled(run_id, "analysis cancelled")
-        repo.session.commit()
-        raise
+        try:
+            repo.mark_cancelled(run_id, "analysis cancelled")
+            repo.session.commit()
+        except KeyError:
+            repo.session.rollback()
+        return
     except Exception as exc:
         repo.session.rollback()
         repo.store_failure(run_id, str(exc))
@@ -191,6 +214,29 @@ def translate_section_task(run_id: str, lang: str, section: str, text: str) -> N
         translate_section(repo, run_id, lang, section, text)
 
 
+def _enqueue_translation_if_active(
+    repo: AnalysisRunRepository,
+    run_id: str,
+    lang: str,
+    section: str,
+    text: str,
+    *,
+    enqueue=None,
+) -> bool:
+    run = repo.session.get(AnalysisRun, run_id)
+    if run is None:
+        return False
+    try:
+        repo.session.refresh(run, attribute_names=["status"])
+    except (InvalidRequestError, ObjectDeletedError):
+        return False
+    if run.status in {"cancelling", "cancelled"}:
+        return False
+    enqueue = enqueue or translate_section_task.apply_async
+    enqueue(args=(run_id, lang, section, text))
+    return True
+
+
 @celery_app.task(name="tradingagents.worker.jobs.run_analysis_task")
 def run_analysis_task(run_id: str) -> None:
     with SessionLocal() as session:
@@ -205,7 +251,7 @@ def run_analysis_task(run_id: str) -> None:
             def on_section(section: str, text: str, _lang=target_lang) -> None:
                 # Translate analyst reports the moment they appear, while the
                 # rest of the pipeline is still running.
-                translate_section_task.apply_async(args=(run_id, _lang, section, text))
+                _enqueue_translation_if_active(repo, run_id, _lang, section, text)
 
         execute_analysis_run(
             repo,

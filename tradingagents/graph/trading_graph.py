@@ -139,6 +139,11 @@ class TradingAgentsGraph:
         self.graph = self.workflow.compile()
         self._checkpointer_ctx = None
 
+    def _raise_if_cancelled(self) -> None:
+        token = getattr(getattr(self, "context", None), "cancellation_token", None)
+        if token is not None:
+            token.raise_if_cancelled()
+
     def _get_provider_kwargs(self) -> Dict[str, Any]:
         """Get provider-specific kwargs for LLM client creation."""
         kwargs = {}
@@ -429,7 +434,9 @@ class TradingAgentsGraph:
 
             final_state = {}
             seen_sections: set[str] = set()
+            self._raise_if_cancelled()
             for chunk in self.graph.stream(init_agent_state, **args):
+                self._raise_if_cancelled()
                 if isinstance(chunk, dict):
                     final_state.update(chunk)
                 for key in REPORT_KEYS:
@@ -438,12 +445,14 @@ class TradingAgentsGraph:
                     value = final_state.get(key)
                     if isinstance(value, str) and value.strip():
                         seen_sections.add(key)
+                        self._raise_if_cancelled()
                         try:
                             on_section_ready(key, value)
                         except Exception:  # noqa: BLE001 - callback must not abort the run
                             logger.warning(
                                 "on_section_ready failed for %s", key, exc_info=True
                             )
+                self._raise_if_cancelled()
         else:
             final_state = self.graph.invoke(init_agent_state, **args)
 

@@ -73,7 +73,7 @@ class GraphSetup:
         # Add analyst nodes to the graph
         for spec in plan.specs:
             workflow.add_node(spec.agent_node, self._cancellable(spec.agent_node, analyst_factories[spec.key]()))
-            workflow.add_node(spec.clear_node, create_msg_delete())
+            workflow.add_node(spec.clear_node, self._cancellable(spec.clear_node, create_msg_delete()))
             workflow.add_node(spec.tool_node, self._cancellable(spec.tool_node, self.tool_nodes[spec.key]))
 
         # Add other nodes

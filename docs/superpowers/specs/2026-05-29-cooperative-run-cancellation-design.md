@@ -2,7 +2,7 @@
 
 日期：2026-05-29
 
-分支：`phase/9-broker-integration`
+分支：`phase/8-increase-concurrency-for-analysis-functions`
 
 ## 背景
 

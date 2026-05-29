@@ -14,7 +14,9 @@ from tradingagents.api.serialization import extract_reports, json_safe_state
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.worker.analysis import run_tradingagents_analysis
 from tradingagents.worker.celery_app import celery_app
-from tradingagents.worker.jobs import execute_analysis_run
+from tradingagents.worker.cancellation import CancellationToken
+from tradingagents.worker.context import RunContext
+from tradingagents.worker.jobs import _execute_with_optional_run_id, execute_analysis_run
 
 
 FERNET_KEY = "dBBj0g2y16HOVnBCwG9r20eyHmxtPXgvBXVHfJfRB4U="
@@ -26,6 +28,14 @@ def _repo():
     Session = sessionmaker(bind=engine, future=True)
     session = Session()
     return session, AnalysisRunRepository(session)
+
+
+def _repo_with_session_factory():
+    engine = create_db_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine, future=True)
+    session = Session()
+    return Session, session, AnalysisRunRepository(session)
 
 
 def _dispatch_run(repo: AnalysisRunRepository, run_id: str) -> None:
@@ -123,6 +133,65 @@ def test_execute_analysis_run_success_writes_result():
         "run_progress",
         "run_succeeded",
     ]
+
+
+def test_execute_with_optional_run_id_passes_context_to_compatible_executor():
+    context = RunContext(
+        run_id="run_ctx",
+        user_id="usr_1",
+        cancellation_token=CancellationToken(lambda: False),
+    )
+    captured = {}
+
+    def fake_executor(
+        ticker,
+        trade_date,
+        asset_type,
+        analysts,
+        llm_config,
+        context=None,
+    ):
+        captured["context"] = context
+        return {"decision": "Hold", "reports": {}, "final_state": {}}
+
+    _execute_with_optional_run_id(
+        fake_executor,
+        run_id="run_ctx",
+        ticker="NVDA",
+        trade_date=date(2026, 1, 15),
+        asset_type="stock",
+        analysts=["market"],
+        llm_config=LLM_CONFIG,
+        context=context,
+    )
+
+    assert captured["context"] is context
+
+
+def test_execute_with_optional_run_id_keeps_legacy_executor_compatible():
+    context = RunContext(
+        run_id="run_ctx",
+        user_id="usr_1",
+        cancellation_token=CancellationToken(lambda: False),
+    )
+    calls = []
+
+    def fake_executor(ticker, trade_date, asset_type, analysts, llm_config):
+        calls.append((ticker, trade_date, asset_type, analysts, llm_config))
+        return {"decision": "Hold", "reports": {}, "final_state": {}}
+
+    _execute_with_optional_run_id(
+        fake_executor,
+        run_id="run_ctx",
+        ticker="NVDA",
+        trade_date=date(2026, 1, 15),
+        asset_type="stock",
+        analysts=["market"],
+        llm_config=LLM_CONFIG,
+        context=context,
+    )
+
+    assert calls == [("NVDA", date(2026, 1, 15), "stock", ["market"], LLM_CONFIG)]
 
 
 def test_successful_worker_persists_report_artifact_metadata():
@@ -306,6 +375,83 @@ def test_execute_analysis_run_does_not_overwrite_cancelled_run_after_executor_re
     ]
 
 
+def test_execute_analysis_run_stops_when_context_token_sees_cancelling_status():
+    from tradingagents.api.models import AnalysisRun
+
+    Session, session, repo = _repo_with_session_factory()
+    run = repo.create_run(
+        "NVDA",
+        date(2026, 1, 15),
+        "stock",
+        ["market"],
+        user_id="usr_1",
+        llm_config=LLM_CONFIG,
+    )
+    _dispatch_run(repo, run.run_id)
+    session.commit()
+
+    def fake_executor(ticker, trade_date, asset_type, analysts, llm_config, context=None):
+        assert context is not None
+        with Session() as other_session:
+            other_run = other_session.get(AnalysisRun, run.run_id)
+            other_run.status = "cancelling"
+            other_run.error = "user requested cancellation"
+            other_session.commit()
+        context.cancellation_token.raise_if_cancelled()
+        raise AssertionError("executor should have been cancelled")
+
+    execute_analysis_run(
+        repo,
+        run.run_id,
+        fake_executor,
+        cancellation_session_factory=Session,
+    )
+    session.commit()
+
+    saved = repo.get_run(run.run_id)
+    assert saved.status == "cancelled"
+    assert repo.get_result(run.run_id) is None
+    assert "run_failed" not in [e.event_type for e in repo.list_events(run.run_id)]
+    assert repo.list_events(run.run_id)[-1].event_type == "run_cancelled"
+
+
+def test_execute_analysis_run_returns_cleanly_when_cancelled_run_is_missing():
+    from tradingagents.api.models import AnalysisRun
+
+    Session, session, repo = _repo_with_session_factory()
+    run = repo.create_run(
+        "NVDA",
+        date(2026, 1, 15),
+        "stock",
+        ["market"],
+        user_id="usr_1",
+        llm_config=LLM_CONFIG,
+    )
+    _dispatch_run(repo, run.run_id)
+    session.commit()
+    run_id = run.run_id
+
+    def fake_executor(ticker, trade_date, asset_type, analysts, llm_config, context=None):
+        assert context is not None
+        with Session() as other_session:
+            other_run = other_session.get(AnalysisRun, run_id)
+            other_session.delete(other_run)
+            other_session.commit()
+        context.cancellation_token.raise_if_cancelled()
+        raise AssertionError("executor should have been cancelled")
+
+    execute_analysis_run(
+        repo,
+        run_id,
+        fake_executor,
+        cancellation_session_factory=Session,
+    )
+    session.commit()
+
+    assert repo.get_run(run_id) is None
+    assert repo.get_result(run_id) is None
+
+
 def test_celery_app_registers_analysis_task():
     script = (
         "from tradingagents.worker.celery_app import celery_app;"
@@ -347,7 +493,7 @@ def test_run_tradingagents_analysis_decrypts_user_api_key_snapshot(monkeypatch, 
     captured_configs = []
 
     class FakeGraph:
-        def __init__(self, selected_analysts, config):
+        def __init__(self, selected_analysts, config, context=None):
             captured_configs.append((selected_analysts, config))
 
         def propagate(self, ticker, trade_date, asset_type):
@@ -372,6 +518,45 @@ def test_run_tradingagents_analysis_decrypts_user_api_key_snapshot(monkeypatch, 
     assert captured_configs[0][1]["api_key"] == "sk-user-abcdef123456"
 
 
+def test_run_tradingagents_analysis_passes_context_to_graph(monkeypatch, tmp_path):
+    from tradingagents.worker.cancellation import CancellationToken
+    from tradingagents.worker.context import RunContext
+
+    monkeypatch.setitem(
+        sys.modules["tradingagents.worker.analysis"].DEFAULT_CONFIG,
+        "reports_dir",
+        str(tmp_path / "reports"),
+    )
+    captured = {}
+    context = RunContext(
+        run_id="run_ctx",
+        user_id="usr_1",
+        cancellation_token=CancellationToken(lambda: False),
+    )
+
+    class FakeGraph:
+        def __init__(self, selected_analysts, config, context=None):
+            captured["selected_analysts"] = selected_analysts
+            captured["context"] = context
+
+        def propagate(self, ticker, trade_date, asset_type):
+            return ({"final_trade_decision": "Hold"}, "Hold")
+
+    monkeypatch.setattr("tradingagents.worker.analysis.TradingAgentsGraph", FakeGraph)
+
+    run_tradingagents_analysis(
+        "NVDA",
+        date(2026, 1, 15),
+        "stock",
+        ["market"],
+        LLM_CONFIG,
+        context=context,
+    )
+
+    assert captured["selected_analysts"] == ["market"]
+    assert captured["context"] is context
+
+
 def test_run_tradingagents_analysis_writes_markdown_report(monkeypatch, tmp_path):
     reports_dir = tmp_path / "reports"
     monkeypatch.setitem(
@@ -381,7 +566,7 @@ def test_run_tradingagents_analysis_writes_markdown_report(monkeypatch, tmp_path
     )
 
     class FakeGraph:
-        def __init__(self, selected_analysts, config):
+        def __init__(self, selected_analysts, config, context=None):
             pass
 
         def propagate(self, ticker, trade_date, asset_type):
@@ -443,7 +628,7 @@ def test_run_tradingagents_analysis_with_run_id_writes_isolated_artifacts(
     )
 
     class FakeGraph:
-        def __init__(self, selected_analysts, config):
+        def __init__(self, selected_analysts, config, context=None):
             pass
 
         def propagate(self, ticker, trade_date, asset_type):
@@ -520,6 +705,131 @@ def _seed_succeeded_run(repo, *, user_language="zh"):
 class _FakeTranslator:
     def translate(self, markdown, *, target_lang):
         return f"[{target_lang}] {markdown}"
+
+
+def test_enqueue_translation_if_active_skips_cancelling_run():
+    from tradingagents.worker.jobs import _enqueue_translation_if_active
+
+    session, repo = _repo()
+    run = repo.create_run(
+        "NVDA",
+        date(2026, 1, 15),
+        "stock",
+        ["market"],
+        user_id="usr_1",
+        llm_config=LLM_CONFIG,
+    )
+    run.status = "cancelling"
+    session.commit()
+    calls = []
+
+    _enqueue_translation_if_active(
+        repo,
+        run.run_id,
+        "zh",
+        "market_report",
+        "body",
+        enqueue=lambda **kwargs: calls.append(kwargs["args"]),
+    )
+
+    assert calls == []
+
+
+def test_enqueue_translation_if_active_refreshes_stale_run_status():
+    from tradingagents.worker.jobs import _enqueue_translation_if_active
+
+    Session, session, repo = _repo_with_session_factory()
+    run = repo.create_run(
+        "NVDA",
+        date(2026, 1, 15),
+        "stock",
+        ["market"],
+        user_id="usr_1",
+        llm_config=LLM_CONFIG,
+    )
+    run.status = "running"
+    session.commit()
+
+    stale_run = session.get(type(run), run.run_id)
+    assert stale_run.status == "running"
+    with Session() as other_session:
+        other_repo = AnalysisRunRepository(other_session)
+        other_run = other_repo.require_run(run.run_id)
+        other_run.status = "cancelling"
+        other_session.commit()
+
+    calls = []
+
+    enqueued = _enqueue_translation_if_active(
+        repo,
+        run.run_id,
+        "zh",
+        "market_report",
+        "body",
+        enqueue=lambda **kwargs: calls.append(kwargs["args"]),
+    )
+
+    assert enqueued is False
+    assert calls == []
+
+
+def test_enqueue_translation_if_active_keeps_unflushed_worker_changes():
+    from tradingagents.worker.jobs import _enqueue_translation_if_active
+
+    session, repo = _repo()
+    run = repo.create_run(
+        "NVDA",
+        date(2026, 1, 15),
+        "stock",
+        ["market"],
+        user_id="usr_1",
+        llm_config=LLM_CONFIG,
+    )
+    run.status = "running"
+    session.commit()
+    run.current_step = "unflushed step"
+    calls = []
+
+    with session.no_autoflush:
+        _enqueue_translation_if_active(
+            repo,
+            run.run_id,
+            "zh",
+            "market_report",
+            "body",
+            enqueue=lambda **kwargs: calls.append(kwargs["args"]),
+        )
+
+    assert calls == [(run.run_id, "zh", "market_report", "body")]
+    assert run.current_step == "unflushed step"
+
+
+def test_enqueue_translation_if_active_enqueues_running_run():
+    from tradingagents.worker.jobs import _enqueue_translation_if_active
+
+    session, repo = _repo()
+    run = repo.create_run(
+        "NVDA",
+        date(2026, 1, 15),
+        "stock",
+        ["market"],
+        user_id="usr_1",
+        llm_config=LLM_CONFIG,
+    )
+    run.status = "running"
+    session.commit()
+    calls = []
+
+    _enqueue_translation_if_active(
+        repo,
+        run.run_id,
+        "zh",
+        "market_report",
+        "body",
+        enqueue=lambda **kwargs: calls.append(kwargs["args"]),
+    )
+
+    assert calls == [(run.run_id, "zh", "market_report", "body")]
 
 
 def test_translate_section_stores_translation_and_keeps_english():
