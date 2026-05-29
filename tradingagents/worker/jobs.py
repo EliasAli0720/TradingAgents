@@ -146,8 +146,11 @@ def execute_analysis_run(
         repo.session.commit()
     except AnalysisCancelled:
         repo.session.rollback()
-        repo.mark_cancelled(run_id, "analysis cancelled")
-        repo.session.commit()
+        try:
+            repo.mark_cancelled(run_id, "analysis cancelled")
+            repo.session.commit()
+        except KeyError:
+            repo.session.rollback()
         return
     except Exception as exc:
         repo.session.rollback()

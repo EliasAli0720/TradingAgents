@@ -415,6 +415,43 @@ def test_execute_analysis_run_stops_when_context_token_sees_cancelling_status():
     assert repo.list_events(run.run_id)[-1].event_type == "run_cancelled"
 
 
+def test_execute_analysis_run_returns_cleanly_when_cancelled_run_is_missing():
+    from tradingagents.api.models import AnalysisRun
+
+    Session, session, repo = _repo_with_session_factory()
+    run = repo.create_run(
+        "NVDA",
+        date(2026, 1, 15),
+        "stock",
+        ["market"],
+        user_id="usr_1",
+        llm_config=LLM_CONFIG,
+    )
+    _dispatch_run(repo, run.run_id)
+    session.commit()
+    run_id = run.run_id
+
+    def fake_executor(ticker, trade_date, asset_type, analysts, llm_config, context=None):
+        assert context is not None
+        with Session() as other_session:
+            other_run = other_session.get(AnalysisRun, run_id)
+            other_session.delete(other_run)
+            other_session.commit()
+        context.cancellation_token.raise_if_cancelled()
+        raise AssertionError("executor should have been cancelled")
+
+    execute_analysis_run(
+        repo,
+        run_id,
+        fake_executor,
+        cancellation_session_factory=Session,
+    )
+    session.commit()
+
+    assert repo.get_run(run_id) is None
+    assert repo.get_result(run_id) is None
+
+
 def test_celery_app_registers_analysis_task():
     script = (
         "from tradingagents.worker.celery_app import celery_app;"
