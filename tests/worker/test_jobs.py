@@ -698,6 +698,75 @@ def test_enqueue_translation_if_active_skips_cancelling_run():
     assert calls == []
 
 
+def test_enqueue_translation_if_active_refreshes_stale_run_status():
+    from tradingagents.worker.jobs import _enqueue_translation_if_active
+
+    Session, session, repo = _repo_with_session_factory()
+    run = repo.create_run(
+        "NVDA",
+        date(2026, 1, 15),
+        "stock",
+        ["market"],
+        user_id="usr_1",
+        llm_config=LLM_CONFIG,
+    )
+    run.status = "running"
+    session.commit()
+
+    stale_run = session.get(type(run), run.run_id)
+    assert stale_run.status == "running"
+    with Session() as other_session:
+        other_repo = AnalysisRunRepository(other_session)
+        other_run = other_repo.require_run(run.run_id)
+        other_run.status = "cancelling"
+        other_session.commit()
+
+    calls = []
+
+    enqueued = _enqueue_translation_if_active(
+        repo,
+        run.run_id,
+        "zh",
+        "market_report",
+        "body",
+        enqueue=lambda **kwargs: calls.append(kwargs["args"]),
+    )
+
+    assert enqueued is False
+    assert calls == []
+
+
+def test_enqueue_translation_if_active_keeps_unflushed_worker_changes():
+    from tradingagents.worker.jobs import _enqueue_translation_if_active
+
+    session, repo = _repo()
+    run = repo.create_run(
+        "NVDA",
+        date(2026, 1, 15),
+        "stock",
+        ["market"],
+        user_id="usr_1",
+        llm_config=LLM_CONFIG,
+    )
+    run.status = "running"
+    session.commit()
+    run.current_step = "unflushed step"
+    calls = []
+
+    with session.no_autoflush:
+        _enqueue_translation_if_active(
+            repo,
+            run.run_id,
+            "zh",
+            "market_report",
+            "body",
+            enqueue=lambda **kwargs: calls.append(kwargs["args"]),
+        )
+
+    assert calls == [(run.run_id, "zh", "market_report", "body")]
+    assert run.current_step == "unflushed step"
+
+
 def test_enqueue_translation_if_active_enqueues_running_run():
     from tradingagents.worker.jobs import _enqueue_translation_if_active
 

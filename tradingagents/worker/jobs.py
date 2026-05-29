@@ -5,6 +5,9 @@ from datetime import date
 from inspect import Parameter, signature
 from typing import Any
 
+from sqlalchemy.exc import InvalidRequestError
+from sqlalchemy.orm.exc import ObjectDeletedError
+
 from tradingagents.api.db import SessionLocal
 from tradingagents.api.config import get_api_settings
 from tradingagents.api.memory_repository import AnalysisMemoryRepository
@@ -217,9 +220,14 @@ def _enqueue_translation_if_active(
     *,
     enqueue=None,
 ) -> bool:
-    repo.session.expire_all()
     run = repo.session.get(AnalysisRun, run_id)
-    if run is None or run.status in {"cancelling", "cancelled"}:
+    if run is None:
+        return False
+    try:
+        repo.session.refresh(run, attribute_names=["status"])
+    except (InvalidRequestError, ObjectDeletedError):
+        return False
+    if run.status in {"cancelling", "cancelled"}:
         return False
     enqueue = enqueue or translate_section_task.apply_async
     enqueue(args=(run_id, lang, section, text))
