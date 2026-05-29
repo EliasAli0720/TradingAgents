@@ -14,7 +14,9 @@ from tradingagents.api.serialization import extract_reports, json_safe_state
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.worker.analysis import run_tradingagents_analysis
 from tradingagents.worker.celery_app import celery_app
-from tradingagents.worker.jobs import execute_analysis_run
+from tradingagents.worker.cancellation import CancellationToken
+from tradingagents.worker.context import RunContext
+from tradingagents.worker.jobs import _execute_with_optional_run_id, execute_analysis_run
 
 
 FERNET_KEY = "dBBj0g2y16HOVnBCwG9r20eyHmxtPXgvBXVHfJfRB4U="
@@ -123,6 +125,65 @@ def test_execute_analysis_run_success_writes_result():
         "run_progress",
         "run_succeeded",
     ]
+
+
+def test_execute_with_optional_run_id_passes_context_to_compatible_executor():
+    context = RunContext(
+        run_id="run_ctx",
+        user_id="usr_1",
+        cancellation_token=CancellationToken(lambda: False),
+    )
+    captured = {}
+
+    def fake_executor(
+        ticker,
+        trade_date,
+        asset_type,
+        analysts,
+        llm_config,
+        context=None,
+    ):
+        captured["context"] = context
+        return {"decision": "Hold", "reports": {}, "final_state": {}}
+
+    _execute_with_optional_run_id(
+        fake_executor,
+        run_id="run_ctx",
+        ticker="NVDA",
+        trade_date=date(2026, 1, 15),
+        asset_type="stock",
+        analysts=["market"],
+        llm_config=LLM_CONFIG,
+        context=context,
+    )
+
+    assert captured["context"] is context
+
+
+def test_execute_with_optional_run_id_keeps_legacy_executor_compatible():
+    context = RunContext(
+        run_id="run_ctx",
+        user_id="usr_1",
+        cancellation_token=CancellationToken(lambda: False),
+    )
+    calls = []
+
+    def fake_executor(ticker, trade_date, asset_type, analysts, llm_config):
+        calls.append((ticker, trade_date, asset_type, analysts, llm_config))
+        return {"decision": "Hold", "reports": {}, "final_state": {}}
+
+    _execute_with_optional_run_id(
+        fake_executor,
+        run_id="run_ctx",
+        ticker="NVDA",
+        trade_date=date(2026, 1, 15),
+        asset_type="stock",
+        analysts=["market"],
+        llm_config=LLM_CONFIG,
+        context=context,
+    )
+
+    assert calls == [("NVDA", date(2026, 1, 15), "stock", ["market"], LLM_CONFIG)]
 
 
 def test_successful_worker_persists_report_artifact_metadata():

@@ -16,10 +16,11 @@ from tradingagents.translation import build_llm_translator, build_translation_tr
 from tradingagents.worker.analysis import run_tradingagents_analysis
 from tradingagents.worker.celery_app import celery_app
 from tradingagents.worker.cancellation import AnalysisCancelled
+from tradingagents.worker.context import RunContext
 from tradingagents.worker.heartbeat import heartbeat
 
 
-AnalysisExecutor = Callable[[str, date, str, list[str], dict[str, Any]], dict[str, Any]]
+AnalysisExecutor = Callable[..., dict[str, Any]]
 
 
 def _execute_with_optional_run_id(
@@ -32,6 +33,7 @@ def _execute_with_optional_run_id(
     analysts: list[str],
     llm_config: dict[str, Any],
     on_section=None,
+    context: RunContext | None = None,
 ) -> dict[str, Any]:
     try:
         parameters = list(signature(executor).parameters.values())
@@ -44,6 +46,8 @@ def _execute_with_optional_run_id(
         kwargs["run_id"] = run_id
     if on_section is not None and (has_var_kw or "on_section" in names):
         kwargs["on_section"] = on_section
+    if context is not None and (has_var_kw or "context" in names):
+        kwargs["context"] = context
     return executor(ticker, trade_date, asset_type, analysts, llm_config, **kwargs)
 
 
