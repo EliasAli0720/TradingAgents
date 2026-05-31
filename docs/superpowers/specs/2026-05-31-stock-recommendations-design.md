@@ -1,66 +1,66 @@
-# Stock Recommendations Design
+# 股票推荐功能设计
 
-Date: 2026-05-31  
-Branch: `phase/9-broker-integration`  
-Status: design approved for planning
+日期：2026-05-31
+分支：`phase/9-broker-integration`
+状态：设计已确认，待拆实施计划
 
-## Goal
+## 目标
 
-Replace the sidebar's full-page "Refresh Data" action with a stock recommendation workflow:
+把侧边栏里会刷新整个页面的「刷新数据」改造成股票推荐工作流：
 
-- Store each user's watchlist in the application database, not in environment variables.
-- Use the user's existing analysis model settings to recommend 5 stocks.
-- Save recommendation batches as history.
-- Let the user manually select recommended stocks before analysis starts.
-- Create normal analysis runs for selected recommendations and link them back to the recommendation items.
+- 每个用户的 watchlist 存到应用数据库里，不再依赖环境变量。
+- 使用用户已经配置好的分析模型推荐 5 支股票。
+- 保存每次推荐批次，形成可回看的历史记录。
+- 推荐结果先进入待确认列表，用户手动选择后才开始分析。
+- 为选中的推荐股票创建普通分析任务，并把分析任务关联回推荐项。
 
-This is a recommendation and triage feature, not an auto-trading feature. It should not place orders or create trade approvals directly.
+这是推荐和筛选功能，不是自动交易功能。它不应该直接下单，也不应该直接创建交易审批。
 
-## Confirmed Decisions
+## 已确认决策
 
-- Recommendation scope: user watchlist first, with model-expanded recommendations allowed.
-- Analysis trigger: manual only. Recommendations go into a confirmation list first.
-- Watchlist source: persisted per-user settings in the database.
-- Recommendation history: keep every batch so users can review what was recommended and what was later analyzed.
-- Layout: standalone Recommendations workspace, reachable from the sidebar.
-- Batch size: fixed at 5 recommendations for the first version.
-- Recommendation input mode: lightweight. Use watchlist, recent analysis history, date, and prompt/schema. Do not scan live market data.
-- Model source: use the user's analysis model configuration. Prefer the quick model for recommendation generation.
-- Analysis parameters from recommendation: default values only: `asset_type=stock`, today's date, all analysts enabled.
+- 推荐范围：优先从用户 watchlist 推荐，同时允许模型扩展推荐新股票。
+- 分析触发：只支持手动触发。推荐结果先进入确认列表。
+- Watchlist 来源：按用户持久化到数据库。
+- 推荐历史：保留每个推荐批次，用户可以回看当时推荐了什么、后来分析了哪些。
+- 页面布局：独立的「推荐股票」工作台，从侧边栏进入。
+- 批次数量：第一版固定每次推荐 5 支股票。
+- 推荐输入模式：轻量模式。只使用 watchlist、最近分析历史、当前日期和明确的 prompt/schema，不扫描实时行情或新闻。
+- 模型来源：使用用户的分析模型配置。推荐生成优先使用 quick 模型。
+- 推荐转分析的参数：全部使用默认值：`asset_type=stock`、今天日期、全量分析师。
 
-## Product Flow
+## 产品流程
 
-1. User opens `/recommendations` from the sidebar.
-2. User edits and saves a persistent watchlist.
-3. User clicks "Generate Recommendations".
-4. Backend loads the user's model settings, watchlist, and recent analysis history.
-5. Backend asks the configured analysis model's quick LLM for exactly 5 recommendations.
-6. Backend validates ticker syntax, saves a recommendation batch and item rows, and returns the batch.
-7. User reviews reasons, risks, source, and priority for each recommended ticker.
-8. User manually checks one or more items and clicks "Start Analysis".
-9. Backend creates one normal analysis run per selected item using default analysis parameters.
-10. Each recommendation item records its linked `run_id` and moves to `analysis_queued`.
-11. Historical batches remain visible and link to created analysis runs.
+1. 用户从侧边栏打开 `/recommendations`。
+2. 用户编辑并保存自己的 watchlist。
+3. 用户点击「生成推荐」。
+4. 后端读取用户的模型设置、watchlist 和最近分析历史。
+5. 后端调用该用户分析模型配置里的 quick LLM，要求生成 5 支推荐股票。
+6. 后端校验 ticker 格式，保存推荐批次和推荐项，然后返回批次结果。
+7. 用户查看每个推荐 ticker 的理由、风险、来源和优先级。
+8. 用户手动勾选一个或多个推荐项，然后点击「开始分析」。
+9. 后端为每个选中的推荐项创建普通分析任务，使用默认分析参数。
+10. 每个推荐项记录对应的 `run_id`，状态变为 `analysis_queued`。
+11. 历史批次保持可见，并链接到已创建的分析任务。
 
-## Sidebar Change
+## 侧边栏改动
 
-Current `Sidebar` has a "Refresh Data" button that calls `location.reload()`. Replace it with a navigation action:
+当前 `Sidebar` 中的「刷新数据」按钮会调用 `location.reload()`。需要把它替换为一个导航入口：
 
-- Label: "Recommend Stocks" / "推荐股票"
-- Destination: `/recommendations`
-- No full-page reload.
+- 文案："Recommend Stocks" / "推荐股票"
+- 目标路由：`/recommendations`
+- 不刷新整个页面。
 
-The "Last refresh" timestamp should be removed or renamed to avoid implying a global page refresh. If retained, it should refer only to the latest recommendation batch timestamp.
+原来的 "Last refresh" 时间戳应该删除或重命名，避免用户以为这里仍然是全局刷新。如果保留，它只能表示最近一次推荐批次的时间。
 
-## Frontend Design
+## 前端设计
 
-Add route:
+新增路由：
 
 ```text
 /recommendations
 ```
 
-Add sidebar item under the Analysis group:
+在侧边栏 Analysis 分组下新增入口：
 
 ```text
 Recommendations
@@ -68,41 +68,41 @@ Agent Reasoning
 New Analysis
 ```
 
-Recommendations page sections:
+推荐页包含四个区域：
 
-1. Watchlist Settings
-   - Editable ticker input area.
-   - Save button.
-   - Show validation errors for invalid ticker symbols.
-   - Persist to backend immediately on save.
+1. Watchlist 设置
+   - 可编辑 ticker 输入区。
+   - 保存按钮。
+   - 对非法 ticker 显示校验错误。
+   - 点击保存后立即持久化到后端。
 
-2. Generate Recommendations
-   - Primary button: "Generate Recommendations".
-   - Disabled while generation is pending.
-   - If model settings are missing, show a link to `/settings/model`.
+2. 生成推荐
+   - 主按钮：「生成推荐」。
+   - 生成中禁用按钮。
+   - 如果模型设置缺失，展示跳转到 `/settings/model` 的入口。
 
-3. Current Batch
-   - Table or dense cards for the latest batch.
-   - Fields: checkbox, ticker, source, priority, reason, risk, status, linked run.
-   - User can select recommended items whose status is still `recommended`.
-   - Button: "Start Analysis for Selected".
+3. 当前批次
+   - 用表格或紧凑卡片展示最新推荐批次。
+   - 字段：复选框、ticker、来源、优先级、推荐理由、风险、状态、关联 run。
+   - 用户只能选择状态仍为 `recommended` 的推荐项。
+   - 操作按钮：「分析所选股票」。
 
-4. History
-   - List previous batches by creation time.
-   - Expanding a batch shows item details and linked run status.
-   - Historical data is read-only except links to analysis details.
+4. 历史批次
+   - 按创建时间列出以前的推荐批次。
+   - 展开批次后展示推荐项详情和关联 run 状态。
+   - 历史数据只读，但可点击进入分析详情。
 
-The page should use existing quiet dashboard styling: dense rows, restrained cards, no marketing hero.
+页面风格沿用当前控制台的安静工具型设计：信息密度高、行列清晰、卡片克制，不做营销式 hero。
 
-## Backend API
+## 后端 API
 
-Add router prefix:
+新增路由前缀：
 
 ```text
 /recommendations
 ```
 
-Endpoints:
+端点：
 
 ```http
 GET /recommendations/watchlist
@@ -115,9 +115,9 @@ POST /recommendations/batches/{batch_id}/analyze
 
 ### GET /recommendations/watchlist
 
-Returns the current user's watchlist. If none exists, return an empty list.
+返回当前用户的 watchlist。如果用户还没有保存过，返回空列表。
 
-Response:
+响应：
 
 ```json
 {
@@ -128,7 +128,7 @@ Response:
 
 ### PUT /recommendations/watchlist
 
-Request:
+请求：
 
 ```json
 {
@@ -136,25 +136,25 @@ Request:
 }
 ```
 
-Validation:
+校验规则：
 
-- Normalize to uppercase.
-- Use the same ticker pattern as analysis runs.
-- Remove duplicates while preserving order.
-- Require at least 1 ticker.
-- Cap at 50 tickers for the first version.
+- 统一转换为大写。
+- 使用和分析任务相同的 ticker 格式规则。
+- 去重并保留原始顺序。
+- 至少需要 1 个 ticker。
+- 第一版最多允许 50 个 ticker。
 
 ### POST /recommendations/generate
 
-Generates and saves one new batch for the current user.
+为当前用户生成并保存一个新的推荐批次。
 
-Request body can be empty in v1:
+第一版请求体可以为空：
 
 ```json
 {}
 ```
 
-Response:
+响应：
 
 ```json
 {
@@ -176,17 +176,17 @@ Response:
 }
 ```
 
-Failure cases:
+失败情况：
 
-- `409`: model settings not configured.
-- `409`: watchlist not configured.
-- `502`: model call failed or returned unusable output.
+- `409`：模型设置未配置。
+- `409`：watchlist 未配置。
+- `502`：模型调用失败，或模型返回内容无法使用。
 
 ### POST /recommendations/batches/{batch_id}/analyze
 
-Creates analysis runs for selected recommendation items.
+为选中的推荐项创建分析任务。
 
-Request:
+请求：
 
 ```json
 {
@@ -194,19 +194,19 @@ Request:
 }
 ```
 
-Behavior:
+行为：
 
-- Only current user's batch items are allowed.
-- Only `recommended` items can create runs.
-- Each created run uses:
+- 只能操作当前用户自己的批次和推荐项。
+- 只有 `recommended` 状态的推荐项可以创建分析任务。
+- 每个创建出的 run 使用：
   - `asset_type = "stock"`
   - `trade_date = date.today()`
   - `analysts = ["market", "social", "news", "fundamentals"]`
-  - the user's saved model settings snapshot, exactly like `POST /runs`
-- The same capacity checks as `POST /runs` should apply.
-- Partial success is allowed: successful items keep their run links; failed items remain `recommended` and include an error in the response.
+  - 用户已保存的模型设置快照，规则与 `POST /runs` 一致
+- 应复用 `POST /runs` 的容量限制检查。
+- 允许部分成功：成功的推荐项保留 run 链接；失败的推荐项仍保持 `recommended`，并在响应中带错误原因。
 
-Response:
+响应：
 
 ```json
 {
@@ -219,133 +219,133 @@ Response:
 }
 ```
 
-## Data Model
+## 数据模型
 
-Additive tables:
+新增表均为 additive 变更。
 
 ### `user_watchlists`
 
-- `user_id` primary key, foreign key to `users.user_id`
-- `tickers` JSON list
+- `user_id`：主键，外键到 `users.user_id`
+- `tickers`：JSON list
 - `created_at`
 - `updated_at`
 
 ### `recommendation_batches`
 
-- `batch_id` primary key
-- `user_id` indexed
-- `status`: `succeeded` or `failed`
-- `watchlist_snapshot` JSON list
-- `model_snapshot` JSON object with provider/model/backend metadata, but no decrypted API key
+- `batch_id`：主键
+- `user_id`：索引
+- `status`：`succeeded` 或 `failed`
+- `watchlist_snapshot`：JSON list
+- `model_snapshot`：JSON object，保存 provider/model/backend 元数据，不保存解密后的 API key
 - `prompt_version`
 - `error`
 - `created_at`
 
 ### `recommendation_items`
 
-- `item_id` primary key
-- `batch_id` foreign key
-- `user_id` indexed
-- `ticker` indexed
-- `source`: `watchlist` or `model_expansion`
-- `priority` integer, 1 is highest
-- `reason` text
-- `risk` text
-- `status`: `recommended`, `analysis_queued`, `analysis_failed`, `ignored`
-- `run_id` nullable foreign key to `analysis_runs.run_id`
-- `error` nullable text
+- `item_id`：主键
+- `batch_id`：外键
+- `user_id`：索引
+- `ticker`：索引
+- `source`：`watchlist` 或 `model_expansion`
+- `priority`：整数，1 表示最高优先级
+- `reason`：文本
+- `risk`：文本
+- `status`：`recommended`、`analysis_queued`、`analysis_failed`、`ignored`
+- `run_id`：可为空，外键到 `analysis_runs.run_id`
+- `error`：可为空的文本
 - `created_at`
 - `updated_at`
 
-Keep `user_id` on item rows as a denormalized authorization guard, matching the repository style used elsewhere.
+推荐项上冗余保存 `user_id`，作为授权保护条件；这与项目里现有 repository 的 user scope 风格保持一致。
 
-## Recommendation Generation
+## 推荐生成
 
-Create a small service, for example `tradingagents/api/recommendation_service.py`.
+新增一个小型服务，例如 `tradingagents/api/recommendation_service.py`。
 
-Inputs:
+输入：
 
-- Current user id
-- User watchlist
-- Recent analysis summaries for the same user
-- Current date
-- User model settings snapshot
+- 当前用户 id
+- 用户 watchlist
+- 同一用户最近的分析摘要
+- 当前日期
+- 用户模型设置快照
 
-The service constructs a focused prompt:
+服务构造一个聚焦 prompt：
 
-- Recommend exactly 5 stock tickers.
-- Prefer the watchlist, but allow model-expanded ideas when justified.
-- Return structured JSON with ticker, source, priority, reason, and risk.
-- Do not invent analysis results.
-- Reasons and risks should be concise and suitable for pre-analysis triage.
+- 必须推荐 5 支股票。
+- 优先从 watchlist 中选择，但允许有明确理由的模型扩展推荐。
+- 返回结构化 JSON，包含 ticker、source、priority、reason、risk。
+- 不允许编造已经完成的分析结论。
+- 推荐理由和风险说明要简短，适合作为分析前的筛选依据。
 
-Use the existing LLM client factory with:
+使用现有 LLM client factory：
 
-- `llm_provider` from user model settings
-- `quick_think_llm` as the model
-- `backend_url` from settings
-- decrypted user API key when present, otherwise service env fallback via the existing LLM client path
+- `llm_provider` 来自用户模型设置
+- 模型使用 `quick_think_llm`
+- `backend_url` 来自用户模型设置
+- 如果用户保存了 API key，使用解密后的用户 key；否则走现有 LLM client 的服务端环境变量回退逻辑
 
-Output validation:
+输出校验：
 
-- Parse structured output with Pydantic when possible.
-- Reject invalid ticker syntax.
-- Deduplicate tickers.
-- If fewer than 5 valid items remain, save only valid items and mark the batch `succeeded` if at least 1 item exists.
-- If no valid items remain, fail the request with `502` and do not create a misleading empty current batch.
+- 优先用 Pydantic 解析结构化输出。
+- 拒绝非法 ticker。
+- 对 ticker 去重。
+- 如果校验后少于 5 支，但至少有 1 支有效股票，则只保存有效推荐，并把批次标记为 `succeeded`。
+- 如果没有任何有效推荐，返回 `502`，不要创建会误导用户的空批次。
 
-## Recent Analysis Context
+## 最近分析上下文
 
-Use recent completed analysis runs for the same user as lightweight context:
+把同一用户最近完成的分析任务作为轻量上下文：
 
-- Limit to the last 10 succeeded runs.
-- Include ticker, trade date, final decision, and a short final decision excerpt.
-- Do not include full reports; recommendation should remain cheap.
+- 最多取最近 10 个 `succeeded` run。
+- 包含 ticker、分析日期、最终评级和最终决策的一小段摘录。
+- 不包含完整报告，避免推荐生成变得昂贵。
 
-This gives the model continuity without running market data tools.
+这样模型可以保留一定连续性，但不会调用市场数据工具。
 
-## Authorization
+## 授权
 
-- All recommendation endpoints require login.
-- `viewer` can view recommendation history and watchlist.
-- `operator` and `admin` can generate recommendations and create analysis runs.
-- If product wants viewers to generate recommendations later, that can be relaxed independently from analysis creation.
+- 所有推荐端点都要求登录。
+- `viewer` 可以查看推荐历史和 watchlist。
+- `operator` 和 `admin` 可以生成推荐并创建分析任务。
+- 如果后续产品希望 viewer 也能生成推荐，可以独立放宽，不影响分析创建权限。
 
-## Error Handling
+## 错误处理
 
-- Missing model settings: show a clear call to action linking to model settings.
-- Missing watchlist: prompt the user to save a watchlist first.
-- Invalid watchlist tickers: return field-level validation errors.
-- Model timeout/provider failure: do not create an empty batch; show a retryable error.
-- Partial analysis creation failure: show per-item failures and keep failed items selectable.
-- Duplicate selected item already linked to a run: return it as failed with `already analyzed`.
+- 模型设置缺失：显示清晰提示，并提供模型设置页入口。
+- Watchlist 缺失：提示用户先保存 watchlist。
+- Watchlist 中存在非法 ticker：返回字段级校验错误。
+- 模型超时或 provider 失败：不创建空批次，前端展示可重试错误。
+- 批量创建分析任务部分失败：展示每个 item 的失败原因，失败项保持可选择。
+- 已经关联 run 的推荐项被重复提交：返回失败项，错误原因是 `already analyzed`。
 
-## Tests
+## 测试
 
-Backend:
+后端：
 
-- Watchlist get/put normalization, duplicate removal, validation, auth.
-- Recommendation generation requires model settings and watchlist.
-- Recommendation service parses valid structured output and rejects invalid tickers.
-- Batch/item persistence and current/history retrieval are user-scoped.
-- Analyze endpoint creates runs with default parameters.
-- Analyze endpoint handles capacity failures and partial success.
-- Non-owner cannot access another user's batch.
+- Watchlist get/put 的规范化、去重、校验和鉴权。
+- 推荐生成要求已配置模型设置和 watchlist。
+- 推荐服务能解析有效结构化输出，并拒绝非法 ticker。
+- 批次和推荐项能持久化，当前批次/历史批次按用户隔离。
+- Analyze 端点按默认参数创建 run。
+- Analyze 端点处理容量限制失败和部分成功。
+- 非 owner 不能访问其他用户的推荐批次。
 
-Frontend:
+前端：
 
-- Settings form saves and reloads watchlist.
-- Generate button calls API and renders batch items.
-- Missing model settings links to `/settings/model`.
-- Selecting items and starting analysis shows created run links.
-- History renders previous batches.
-- Sidebar no longer calls `location.reload()`.
+- Watchlist 表单能保存并重新加载。
+- 生成推荐按钮调用 API，并渲染批次项目。
+- 模型设置缺失时能链接到 `/settings/model`。
+- 选择推荐项并开始分析后，展示创建出的 run 链接。
+- 历史批次能正常展示。
+- 侧边栏不再调用 `location.reload()`。
 
-## Out Of Scope
+## 不在范围内
 
-- Automatic analysis of recommendations.
-- Real-time market/news scanning for recommendation input.
-- Per-recommendation date or analyst customization.
-- Dedicated recommendation model settings.
-- Trading proposals or order placement from recommendations.
-- Recommendation performance scoring beyond saved history.
+- 自动分析推荐股票。
+- 用实时行情或新闻扫描作为推荐输入。
+- 为每支推荐单独配置分析日期或分析师。
+- 单独的推荐模型设置。
+- 从推荐直接创建交易提案或下单。
+- 推荐效果评分；第一版只保存历史，不做绩效评估。
