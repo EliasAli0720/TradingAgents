@@ -187,6 +187,64 @@ class AnalysisMemoryEntry(Base):
     )
 
 
+class UserWatchlist(Base):
+    __tablename__ = "user_watchlists"
+
+    user_id: Mapped[str] = mapped_column(
+        String, ForeignKey("users.user_id", ondelete="CASCADE"), primary_key=True
+    )
+    tickers: Mapped[list[str]] = mapped_column(JsonType, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class RecommendationBatch(Base):
+    __tablename__ = "recommendation_batches"
+
+    batch_id: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    watchlist_snapshot: Mapped[list[str]] = mapped_column(JsonType, nullable=False)
+    model_snapshot: Mapped[dict[str, Any]] = mapped_column(JsonType, nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String, nullable=False)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        Index("idx_recommendation_batches_user_created", "user_id", "created_at"),
+    )
+
+
+class RecommendationItem(Base):
+    __tablename__ = "recommendation_items"
+
+    item_id: Mapped[str] = mapped_column(String, primary_key=True)
+    batch_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("recommendation_batches.batch_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    ticker: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String, nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    risk: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    run_id: Mapped[Optional[str]] = mapped_column(
+        String, ForeignKey("analysis_runs.run_id", ondelete="SET NULL"), nullable=True
+    )
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        Index("idx_recommendation_items_user_status", "user_id", "status"),
+        Index("idx_recommendation_items_batch_priority", "batch_id", "priority"),
+    )
+
+
 class User(Base):
     __tablename__ = "users"
 
