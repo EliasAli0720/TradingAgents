@@ -122,6 +122,46 @@ class HealthResponse(BaseModel):
     redis: str
 
 
+class WatchlistRequest(BaseModel):
+    tickers: list[str]
+
+
+class WatchlistResponse(BaseModel):
+    tickers: list[str]
+    updated_at: Optional[datetime] = None
+
+
+class RecommendationItemResponse(BaseModel):
+    item_id: str
+    ticker: str
+    source: Literal["watchlist", "model_expansion"]
+    priority: int
+    reason: str
+    risk: str
+    status: Literal[
+        "recommended",
+        "analysis_queued",
+        "analysis_failed",
+        "ignored",
+    ]
+    run_id: Optional[str] = None
+    error: Optional[str] = None
+
+
+class RecommendationBatchResponse(BaseModel):
+    batch_id: str
+    status: Literal["succeeded", "failed"]
+    created_at: datetime
+    items: list[RecommendationItemResponse]
+
+
+class RecommendationBatchSummaryResponse(BaseModel):
+    batch_id: str
+    status: Literal["succeeded", "failed"]
+    created_at: datetime
+    item_count: int
+
+
 SUPPORTED_LLM_PROVIDERS = {
     "anthropic",
     "azure",
