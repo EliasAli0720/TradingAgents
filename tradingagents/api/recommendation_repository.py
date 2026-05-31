@@ -160,6 +160,32 @@ class RecommendationRepository:
         )
         return list(self.session.scalars(stmt))
 
+    def get_items_by_ids(
+        self,
+        user_id: str,
+        batch_id: str,
+        item_ids: list[str],
+    ) -> list[RecommendationItem]:
+        if not item_ids:
+            return []
+        stmt = select(RecommendationItem).where(
+            RecommendationItem.user_id == user_id,
+            RecommendationItem.batch_id == batch_id,
+            RecommendationItem.item_id.in_(item_ids),
+        )
+        return list(self.session.scalars(stmt))
+
+    def mark_analysis_queued(self, item: RecommendationItem, run_id: str) -> None:
+        item.status = "analysis_queued"
+        item.run_id = run_id
+        item.error = None
+        item.updated_at = utcnow()
+
+    def mark_analysis_failed(self, item: RecommendationItem, detail: str) -> None:
+        item.status = "recommended"
+        item.error = detail
+        item.updated_at = utcnow()
+
     def recent_analysis_context(self, user_id: str, limit: int = 10) -> list[dict[str, Any]]:
         stmt = (
             select(AnalysisRun, AnalysisRunResult)

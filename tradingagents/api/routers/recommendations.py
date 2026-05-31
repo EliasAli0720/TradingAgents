@@ -5,6 +5,8 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from tradingagents.api.capacity import CapacityConfig, capacity_snapshot
+from tradingagents.api.config import get_api_settings
 from tradingagents.api.crypto import decrypt_secret
 from tradingagents.api.deps import get_current_user, get_db_session
 from tradingagents.api.model_settings_repository import UserModelSettingsRepository
@@ -14,7 +16,12 @@ from tradingagents.api.recommendation_service import (
     PROMPT_VERSION,
     RecommendationGenerator,
 )
+from tradingagents.api.repositories import AnalysisRunRepository
 from tradingagents.api.schemas import (
+    AnalyzeRecommendationCreatedResponse,
+    AnalyzeRecommendationFailedResponse,
+    AnalyzeRecommendationsRequest,
+    AnalyzeRecommendationsResponse,
     GenerateRecommendationsRequest,
     RecommendationBatchResponse,
     RecommendationBatchSummaryResponse,
@@ -176,3 +183,93 @@ def get_batch(
     if batch is None:
         raise HTTPException(status_code=404, detail="recommendation batch not found")
     return _batch_response(repo, user.user_id, batch)
+
+
+@router.post("/batches/{batch_id}/analyze", response_model=AnalyzeRecommendationsResponse)
+def analyze_recommendations(
+    batch_id: str,
+    request: AnalyzeRecommendationsRequest,
+    session: Session = Depends(get_db_session),
+    user: User = Depends(get_current_user),
+) -> AnalyzeRecommendationsResponse:
+    if user.role not in {"admin", "operator"}:
+        raise HTTPException(status_code=403, detail="role required")
+
+    settings = UserModelSettingsRepository(session).snapshot(user.user_id)
+    if settings is None:
+        raise HTTPException(status_code=409, detail="model settings not configured")
+
+    repo = RecommendationRepository(session)
+    batch = repo.get_batch(user.user_id, batch_id)
+    if batch is None:
+        raise HTTPException(status_code=404, detail="recommendation batch not found")
+
+    api_settings = get_api_settings()
+    run_repo = AnalysisRunRepository(session, user_id=user.user_id)
+    items = {
+        item.item_id: item
+        for item in repo.get_items_by_ids(user.user_id, batch_id, request.item_ids)
+    }
+    created: list[AnalyzeRecommendationCreatedResponse] = []
+    failed: list[AnalyzeRecommendationFailedResponse] = []
+
+    for item_id in request.item_ids:
+        item = items.get(item_id)
+        if item is None:
+            failed.append(
+                AnalyzeRecommendationFailedResponse(
+                    item_id=item_id,
+                    detail="recommendation item not found",
+                )
+            )
+            continue
+        if item.status != "recommended" or item.run_id:
+            failed.append(
+                AnalyzeRecommendationFailedResponse(
+                    item_id=item.item_id,
+                    ticker=item.ticker,
+                    detail="already analyzed",
+                )
+            )
+            continue
+
+        capacity = capacity_snapshot(
+            session,
+            user.user_id,
+            CapacityConfig(
+                system_running=api_settings.max_running_system,
+                user_running=api_settings.max_running_per_user,
+                user_backlog=api_settings.max_queued_per_user,
+            ),
+        )
+        if not capacity.can_create:
+            detail = "too many queued analysis runs"
+            repo.mark_analysis_failed(item, detail)
+            failed.append(
+                AnalyzeRecommendationFailedResponse(
+                    item_id=item.item_id,
+                    ticker=item.ticker,
+                    detail=detail,
+                )
+            )
+            continue
+
+        run = run_repo.create_run(
+            ticker=item.ticker,
+            trade_date=date.today(),
+            asset_type="stock",
+            analysts=["market", "social", "news", "fundamentals"],
+            user_id=user.user_id,
+            llm_config=settings,
+        )
+        repo.mark_analysis_queued(item, run.run_id)
+        created.append(
+            AnalyzeRecommendationCreatedResponse(
+                item_id=item.item_id,
+                ticker=item.ticker,
+                run_id=run.run_id,
+            )
+        )
+
+    session.commit()
+    return AnalyzeRecommendationsResponse(created=created, failed=failed)

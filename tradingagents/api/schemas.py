@@ -166,6 +166,27 @@ class GenerateRecommendationsRequest(BaseModel):
     pass
 
 
+class AnalyzeRecommendationsRequest(BaseModel):
+    item_ids: list[str]
+
+
+class AnalyzeRecommendationCreatedResponse(BaseModel):
+    item_id: str
+    ticker: str
+    run_id: str
+
+
+class AnalyzeRecommendationFailedResponse(BaseModel):
+    item_id: str
+    ticker: Optional[str] = None
+    detail: str
+
+
+class AnalyzeRecommendationsResponse(BaseModel):
+    created: list[AnalyzeRecommendationCreatedResponse]
+    failed: list[AnalyzeRecommendationFailedResponse]
+
+
 SUPPORTED_LLM_PROVIDERS = {
     "anthropic",
     "azure",

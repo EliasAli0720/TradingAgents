@@ -165,3 +165,42 @@ def test_generate_saves_batch_and_history(monkeypatch):
     detail = client.get(f"/recommendations/batches/{body['batch_id']}")
     assert detail.status_code == 200
     assert detail.json()["items"][0]["reason"] == "AI infrastructure leader"
+
+
+def test_analyze_selected_items_creates_default_stock_runs(monkeypatch):
+    client = _client()
+    _login(client)
+    _put_model_settings(client)
+    client.put("/recommendations/watchlist", json={"tickers": ["NVDA", "AAPL"]})
+
+    from tradingagents.api.routers import recommendations
+
+    monkeypatch.setattr(
+        recommendations,
+        "build_recommendation_generator",
+        lambda settings: FakeGenerator(),
+    )
+    batch = client.post("/recommendations/generate", json={}).json()
+    item_id = batch["items"][0]["item_id"]
+
+    response = client.post(
+        f"/recommendations/batches/{batch['batch_id']}/analyze",
+        json={"item_ids": [item_id]},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["failed"] == []
+    assert body["created"][0]["item_id"] == item_id
+    assert body["created"][0]["ticker"] == "NVDA"
+    assert body["created"][0]["run_id"].startswith("run_")
+
+    refreshed = client.get(f"/recommendations/batches/{batch['batch_id']}").json()
+    item = refreshed["items"][0]
+    assert item["status"] == "analysis_queued"
+    assert item["run_id"] == body["created"][0]["run_id"]
+
+    run = client.get(f"/runs/{item['run_id']}").json()
+    assert run["ticker"] == "NVDA"
+    assert run["asset_type"] == "stock"
+    assert run["analysts"] == ["market", "social", "news", "fundamentals"]
