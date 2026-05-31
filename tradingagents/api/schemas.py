@@ -162,6 +162,10 @@ class RecommendationBatchSummaryResponse(BaseModel):
     item_count: int
 
 
+class GenerateRecommendationsRequest(BaseModel):
+    pass
+
+
 SUPPORTED_LLM_PROVIDERS = {
     "anthropic",
     "azure",
