@@ -14,6 +14,7 @@ import LoginPage from './routes/login';
 import AnalysisListPage from './routes/analysis/list';
 import AnalysisNewPage from './routes/analysis/new';
 import AnalysisDetailPage from './routes/analysis/detail';
+import RecommendationsPage from './routes/recommendations';
 import ModelSettingsPage from './routes/settings/model';
 import TranslationSettingsPage from './routes/settings/translation';
 import AccountSettingsPage from './routes/settings/account';
@@ -26,6 +27,7 @@ export const router = createBrowserRouter([
     element: <RequireAuth><AppLayout /></RequireAuth>,
     children: [
       { path: '/', element: <Navigate to="/analysis" replace /> },
+      { path: '/recommendations', element: <RecommendationsPage /> },
       { path: '/analysis', element: <AnalysisListPage /> },
       { path: '/analysis/new', element: <AnalysisNewPage /> },
       { path: '/analysis/:runId', element: <AnalysisDetailPage /> },
