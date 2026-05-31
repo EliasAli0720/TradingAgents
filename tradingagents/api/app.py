@@ -9,6 +9,7 @@ from tradingagents.api.routers import (
     admin,
     auth,
     broker,
+    broker_oauth,
     capacity,
     health,
     recommendations,
@@ -37,6 +38,7 @@ def create_app() -> FastAPI:
     app.include_router(capacity.router)
     app.include_router(broker.router)
     app.include_router(recommendations.router)
+    app.include_router(broker_oauth.router)
 
     @app.on_event("startup")
     def _startup():

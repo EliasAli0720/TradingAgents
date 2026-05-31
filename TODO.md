@@ -1,10 +1,27 @@
 # TODO
 
-更新时间：2026-05-27
+更新时间：2026-05-31
 
 本文档集中记录当前项目里仍有价值的后续工作。其他设计文档保留上下文说明，但不再作为待办入口。
 
 ## P0 / P1
+
+### 0. Webull 接入 — W3 交易链路（阻塞中：等 Webull UAT 凭证）
+
+> 设计：`docs/superpowers/specs/2026-05-31-webull-server-broker-design.md`
+> 决策：服务端云经纪 + Connect API 多租户（每用户 OAuth token 加密落库）。
+> 已完成 W1（适配器+只读）/ W2（凭证表+OAuth+per-user provider）/ W4（前端连接卡片）；全套 623 测试绿、前端 build 绿。
+> **W3 唯一阻塞 = 没有 Webull UAT 凭证。** 拿到后按下面顺序做（SDK/OAuth 的真实字段都已隔离在单一文件，只改那里）：
+
+- [ ] **阶段 0 — 申请凭证**：邮件 `connect.api@webull-us.com`（公司名 + redirect_uri）申请 Connect App，或先用 UAT 共享测试账户。拿到 `client_id / client_secret / scope / app_key / app_secret`，填入环境变量 `WEBULL_CLIENT_ID / WEBULL_CLIENT_SECRET / WEBULL_REDIRECT_URI / WEBULL_APP_KEY / WEBULL_APP_SECRET`（见 `tradingbot/config.py` 的 `webull_*`）。`pip install ".[webull]"` 装 SDK。
+- [ ] **核对 OAuth 端点**：对照 Connect API authentication 文档，校准 `tradingbot/broker/webull_oauth.py` 的 `_AUTHORIZE_PATH / _TOKEN_PATH / scope / base URL`（现为推断值，已隔离常量）。先确认 token 端点是否真返回 `refresh_token`（有二手文档称早期未实装；无则 access_token 过期即需重新授权，代码已兜底）。
+- [ ] **核对 SDK 字段**：用真凭证连 UAT，校准 `tradingbot/broker/webull_client.py` 里 `SdkWebullClient` 的方法名/字段（account_balance / positions / resolve_instrument / get_quote / preview_order / place_order / cancel_order / get_order / list_orders / get_account_list）和 token 注入方式（`set_access_token` vs header）。**这是唯一碰真 SDK 的文件**，字段映射已归一，只改这里。
+- [ ] **下单字段**：`place_order` 的 `client_order_id / instrument_id / side / tif / order_type / limit_price / qty` 对齐；确认 symbol→instrument_id 解析端点 + 加客户端限流（account 2/2s、place 600/60s、preview 150/10s、instrument 10/30s）。
+- [ ] **接审批执行链路**（基本 0 改动）：Webull 用户走现有 `POST /broker/approvals`（build）→ `/approvals/{id}/approve`（execute → `WebullBroker.submit_order`）；验证 `broker_orders` 镜像写入 `account_id = cred.account_id`。
+- [ ] **成交回写**：`get_order` 轮询把 pending→filled 更新回 `broker_orders`（首版轮询，或 `POST /broker/orders/{id}/status`）。
+- [ ] **真机走通**：浏览器登录 → broker 页「连接 Webull」→ OAuth 授权 → 回调存 token → 生成建议 → 批准 → Webull UAT 下单 → 订单/持仓刷新。
+- [ ] **混币种检查**：美区账户多为 USD，较简单；仍确认 RiskGate/盈亏不硬编码 USD（参考 IBKR 的 HKD 坑）。
+- [ ] **W5（可选，后续）**：gRPC 实时订单回报替代轮询；多 broker 并存时前端显式切换 UI；期权/组合单。
 
 ### 1. Session 表清理
 

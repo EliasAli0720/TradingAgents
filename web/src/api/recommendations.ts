@@ -1,7 +1,8 @@
 import { http } from './client';
 
 export type RecommendationSource = 'watchlist' | 'model_expansion';
-export type RecommendationStatus = 'recommended' | 'analysis_queued' | 'analysis_failed' | 'ignored';
+export type RecommendationItemStatus = 'recommended' | 'analysis_queued' | 'analysis_failed' | 'ignored';
+export type RecommendationBatchStatus = 'succeeded' | 'failed';
 
 export type RecommendationItem = {
   item_id: string;
@@ -10,21 +11,21 @@ export type RecommendationItem = {
   priority: number;
   reason: string;
   risk: string;
-  status: RecommendationStatus;
+  status: RecommendationItemStatus;
   run_id: string | null;
   error: string | null;
 };
 
 export type RecommendationBatch = {
   batch_id: string;
-  status: 'succeeded' | 'failed';
+  status: RecommendationBatchStatus;
   created_at: string;
   items: RecommendationItem[];
 };
 
 export type RecommendationBatchSummary = {
   batch_id: string;
-  status: 'succeeded' | 'failed';
+  status: RecommendationBatchStatus;
   created_at: string;
   item_count: number;
 };
@@ -57,12 +58,12 @@ export const recommendationsApi = {
     return data;
   },
   async batch(batchId: string): Promise<RecommendationBatch> {
-    const { data } = await http.get<RecommendationBatch>(`/recommendations/batches/${batchId}`);
+    const { data } = await http.get<RecommendationBatch>(`/recommendations/batches/${encodeURIComponent(batchId)}`);
     return data;
   },
   async analyze(batchId: string, itemIds: string[]): Promise<AnalyzeRecommendationsResponse> {
     const { data } = await http.post<AnalyzeRecommendationsResponse>(
-      `/recommendations/batches/${batchId}/analyze`,
+      `/recommendations/batches/${encodeURIComponent(batchId)}/analyze`,
       { item_ids: itemIds },
     );
     return data;

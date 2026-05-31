@@ -48,6 +48,29 @@ TRADINGBOT_CONFIG = {
     "ibkr_cmd_queue": os.getenv("IBKR_CMD_QUEUE", "ibkr:commands"),
 
     # ------------------------------------------------------------------ #
+    # Webull (Connect API — cloud REST, multi-tenant OAuth)               #
+    # ------------------------------------------------------------------ #
+    # Platform request-signing credentials (shared across users). The per-user
+    # OAuth access token + account id are injected at request time by the broker
+    # provider (see routers/broker.py), NOT read from env here.
+    "webull_app_key": os.getenv("WEBULL_APP_KEY", ""),
+    "webull_app_secret": os.getenv("WEBULL_APP_SECRET", ""),
+    # Region: us / hk / jp / sg.
+    "webull_region": os.getenv("WEBULL_REGION", "us"),
+    # Optional explicit OAuth endpoint override (else derived from region+paper).
+    "webull_endpoint": os.getenv("WEBULL_ENDPOINT", ""),
+    # Connect API OAuth app (issued by Webull on registration). Used by the
+    # server-side OAuth flow; the per-user tokens it mints are stored encrypted.
+    "webull_client_id": os.getenv("WEBULL_CLIENT_ID", ""),
+    "webull_client_secret": os.getenv("WEBULL_CLIENT_SECRET", ""),
+    "webull_redirect_uri": os.getenv("WEBULL_REDIRECT_URI", ""),
+    "webull_scope": os.getenv("WEBULL_SCOPE", "trade account"),
+    # Optional explicit OAuth base override (else derived from region+paper).
+    "webull_oauth_base": os.getenv("WEBULL_OAUTH_BASE", ""),
+    # Where to send the browser after a successful/failed OAuth callback.
+    "webull_post_auth_redirect": os.getenv("WEBULL_POST_AUTH_REDIRECT", "/broker"),
+
+    # ------------------------------------------------------------------ #
     # Watchlist                                                            #
     # ------------------------------------------------------------------ #
     # Tickers the scheduler will analyse every trading day.

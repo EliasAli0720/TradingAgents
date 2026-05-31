@@ -32,6 +32,7 @@ const GROUPS: { title: string; items: Item[] }[] = [
 export default function Sidebar() {
   return (
     <aside className="w-72 shrink-0 h-full overflow-y-auto bg-panel border-r border-border p-4 text-sm">
+      {/* Title */}
       <div className="font-bold">{t('app.sidebar.title')}</div>
 
       {/* Mode pill — reflects the connected broker account (mock / real) */}

@@ -501,3 +501,51 @@ class PortfolioSnapshot(Base):
             "snapshot_date",
         ),
     )
+
+
+class BrokerCredential(Base):
+    """Per-user broker OAuth credentials (Webull Connect API, multi-tenant).
+
+    Unlike IBKR (one shared platform account on a local socket), Webull is a
+    cloud broker where each user authorises their *own* account. The server
+    keeps that user's short-lived access token + refresh token here, encrypted
+    at rest with the same Fernet key as model API keys (see ``crypto.py``).
+    Tokens are never returned to the client or logged. One row per (user, broker).
+
+    See docs/superpowers/specs/2026-05-31-webull-server-broker-design.md §4
+    """
+
+    __tablename__ = "broker_credentials"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    broker: Mapped[str] = mapped_column(
+        String, nullable=False, default="webull", server_default=text("'webull'")
+    )
+    account_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    region: Mapped[str] = mapped_column(
+        String, nullable=False, default="us", server_default=text("'us'")
+    )
+    access_token_enc: Mapped[str] = mapped_column(Text, nullable=False)
+    refresh_token_enc: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    token_expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    refresh_expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    scope: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # connected | expired | revoked
+    status: Mapped[str] = mapped_column(
+        String, nullable=False, default="connected", server_default=text("'connected'")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "broker", name="uq_broker_credential_user_broker"),
+    )

@@ -4,6 +4,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { Subheader, Caption, Info, ErrorBox } from '@/components/ui/Page';
 import Metric, { KpiRow } from '@/components/ui/Metric';
 import { getLocale, t } from '@/i18n';
+import WebullConnectCard from '@/components/broker/WebullConnectCard';
 
 function money(n: number): string {
   return n.toLocaleString(getLocale(), { maximumFractionDigits: 2 });
@@ -63,6 +64,12 @@ export default function BrokerStatusPage() {
     <div>
       <Subheader>{t('broker.status.title')}</Subheader>
       <Caption>{t('broker.status.caption')}</Caption>
+
+      {channel.kind === 'server' && (
+        <div className="mb-4">
+          <WebullConnectCard />
+        </div>
+      )}
 
       {status.isLoading ? (
         <div className="text-muted">{t('common.loading')}</div>

@@ -226,9 +226,29 @@ def get_connection_service(
 
 
 def get_broker(
+    session: Session = Depends(get_db_session),
+    user: User = Depends(get_current_user),
     svc: BrokerConnectionService = Depends(get_connection_service),
+    config: dict = Depends(get_config),
     redis_client=Depends(get_redis_client),
 ):
+    """Resolve the broker for the current user.
+
+    Webull-connected users get a per-user cloud broker (no Redis); everyone else
+    falls through to the IBKR connector path, which requires Redis.
+    """
+    from tradingagents.api.broker_provider import resolve_active_broker
+
+    if resolve_active_broker(session, user, config) == "webull":
+        from tradingagents.api.broker_provider import build_user_broker
+
+        try:
+            return build_user_broker(session, user, config, svc)
+        except (LookupError, PermissionError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+            ) from exc
+
     if redis_client is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -326,10 +346,15 @@ def _order_resp(o) -> OrderResponse:
 
 @router.get("/status", response_model=BrokerStatusResponse)
 def broker_status(
+    session: Session = Depends(get_db_session),
+    user: User = Depends(get_current_user),
+    config: dict = Depends(get_config),
     svc: BrokerConnectionService = Depends(get_connection_service),
     repo: BrokerRepository = Depends(get_broker_repo),
 ):
-    return BrokerStatusResponse(**svc.status(repo))
+    from tradingagents.api.broker_provider import status_for
+
+    return BrokerStatusResponse(**status_for(session, user, config, svc, repo))
 
 
 @router.get("/account", response_model=AccountResponse)

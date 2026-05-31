@@ -45,6 +45,12 @@ dependencies = [
     "ib-async>=2.1.0",
 ]
 
+[project.optional-dependencies]
+# Webull Connect API broker (cloud REST). Optional so lean installs and the
+# sidecar bundle don't pull it; WebullBroker imports it lazily. Install with:
+#   pip install ".[webull]"
+webull = ["webull-openapi-python-sdk>=0.1.18"]
+
 [project.scripts]
 tradingagents = "cli.main:app"
 

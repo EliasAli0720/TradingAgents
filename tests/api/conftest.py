@@ -15,6 +15,15 @@ def _disable_secure_cookies(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _encryption_key(monkeypatch):
+    """Provide a Fernet key so secret encryption (model keys, broker OAuth
+    tokens) works in tests without depending on a local .env."""
+    monkeypatch.setenv(
+        "MODEL_API_KEY_ENCRYPTION_KEY", "dBBj0g2y16HOVnBCwG9r20eyHmxtPXgvBXVHfJfRB4U="
+    )
+
+
+@pytest.fixture(autouse=True)
 def _reset_login_limiter():
     """The /auth/login limiter is a process-global singleton. Reset it
     between tests so accumulated attempts don't bleed across test cases."""

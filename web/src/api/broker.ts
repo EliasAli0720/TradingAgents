@@ -145,6 +145,15 @@ export type SnapshotPayload = {
   open_positions: number;
 };
 
+export type WebullConnectionStatus = {
+  connected: boolean;
+  status: 'connected' | 'expired' | 'revoked' | 'not_connected' | string;
+  account_id: string | null;
+  region: string | null;
+  scope: string | null;
+  token_expires_at: string | null;
+};
+
 export const brokerApi = {
   async status(): Promise<BrokerStatus> {
     return (await http.get<BrokerStatus>('/broker/status')).data;
@@ -223,5 +232,22 @@ export const brokerApi = {
     limit_price?: number | null;
   }): Promise<BrokerOrder> {
     return (await http.post<BrokerOrder>('/broker/orders/manual', payload)).data;
+  },
+  // Webull Connect API (cloud broker, per-user OAuth). The platform holds each
+  // user's tokens server-side; the browser only starts / inspects the link.
+  webull: {
+    async status(): Promise<WebullConnectionStatus> {
+      return (await http.get<WebullConnectionStatus>('/broker/oauth/webull/status')).data;
+    },
+    async authorizeUrl(): Promise<string> {
+      return (await http.get<{ authorize_url: string }>('/broker/oauth/webull/authorize')).data
+        .authorize_url;
+    },
+    async refresh(): Promise<WebullConnectionStatus> {
+      return (await http.post<WebullConnectionStatus>('/broker/oauth/webull/refresh')).data;
+    },
+    async disconnect(): Promise<WebullConnectionStatus> {
+      return (await http.post<WebullConnectionStatus>('/broker/oauth/webull/disconnect')).data;
+    },
   },
 };

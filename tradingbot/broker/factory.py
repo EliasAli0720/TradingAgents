@@ -76,4 +76,31 @@ def build_broker(config: Mapping[str, Any], *, mode: str = "local") -> BrokerAda
         )
         return IBKRBroker(conn, account_id=account_id, paper=paper)
 
+    if broker == "webull":
+        # Cloud REST (Connect API): stateless per request, so the same direct
+        # build serves both modes — no Redis connector, unlike ibkr. Per-user
+        # OAuth token + account id are injected through config by the provider.
+        from .webull import WebullBroker
+        from .webull_client import SdkWebullClient
+
+        region = str(config.get("webull_region", "us"))
+        paper = config.get("paper_trading", True)
+        client = config.get("webull_client")  # injected in tests / by provider
+        if client is None:
+            client = SdkWebullClient(
+                access_token=config.get("webull_access_token", ""),
+                app_key=config.get("webull_app_key", ""),
+                app_secret=config.get("webull_app_secret", ""),
+                region=region,
+                paper=paper,
+                endpoint=config.get("webull_endpoint") or None,
+                token_provider=config.get("webull_token_provider"),
+            )
+        return WebullBroker(
+            client,
+            account_id=config.get("webull_account_id") or "",
+            region=region,
+            paper=paper,
+        )
+
     raise ValueError(f"Unknown broker type: {broker!r}")

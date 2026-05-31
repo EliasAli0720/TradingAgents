@@ -6,19 +6,28 @@ import {
   recommendationsApi,
   type RecommendationBatch,
   type RecommendationBatchSummary,
+  type RecommendationItemStatus,
 } from '@/api/recommendations';
 import type { ApiError } from '@/api/client';
 import { Subheader, Caption, ErrorBox } from '@/components/ui/Page';
 import { getLocale, t } from '@/i18n';
 
+const STATUS_CLS: Record<RecommendationItemStatus, string> = {
+  recommended: 'bg-infoBg text-info',
+  analysis_queued: 'bg-warnBg text-warn',
+  analysis_failed: 'bg-dangerBg text-danger',
+  ignored: 'bg-neutralBg text-muted',
+};
+
 function splitTickers(value: string): string[] {
   return value
     .split(/[\s,]+/)
-    .map((part) => part.trim())
+    .map((part) => part.trim().toUpperCase())
     .filter(Boolean);
 }
 
-function fmtTime(iso: string): string {
+function fmtTime(iso: string | null | undefined): string {
+  if (!iso) return '—';
   try {
     return new Date(iso).toLocaleString(getLocale(), { hour12: false });
   } catch {
@@ -43,7 +52,7 @@ export default function RecommendationsPage() {
   const activeBatch = useQuery({
     queryKey: ['recommendations', 'batch', activeBatchId],
     queryFn: () => recommendationsApi.batch(activeBatchId!),
-    enabled: Boolean(activeBatchId),
+    enabled: !!activeBatchId,
   });
 
   useEffect(() => {
@@ -54,11 +63,15 @@ export default function RecommendationsPage() {
     if (!activeBatchId && batches.data?.[0]) setActiveBatchId(batches.data[0].batch_id);
   }, [activeBatchId, batches.data]);
 
+  useEffect(() => {
+    setSelected({});
+  }, [activeBatchId]);
+
   const saveWatchlist = useMutation({
     mutationFn: () => recommendationsApi.saveWatchlist(splitTickers(watchlistText)),
     onSuccess: (saved) => {
-      setWatchlistText(saved.tickers.join(', '));
       qc.setQueryData(['recommendations', 'watchlist'], saved);
+      qc.invalidateQueries({ queryKey: ['recommendations', 'watchlist'] });
     },
   });
 
@@ -83,17 +96,14 @@ export default function RecommendationsPage() {
 
   const batch = activeBatch.data;
   const selectedIds = useMemo(
-    () => Object.entries(selected).filter(([, value]) => value).map(([id]) => id),
+    () =>
+      Object.entries(selected)
+        .filter(([, value]) => value)
+        .map(([id]) => id),
     [selected],
   );
-  const error = (
-    watchlist.error ||
-    batches.error ||
-    activeBatch.error ||
-    saveWatchlist.error ||
-    generate.error ||
-    analyze.error
-  ) as unknown as ApiError | undefined;
+  const actionError = (saveWatchlist.error || generate.error || analyze.error) as
+    unknown as ApiError | undefined;
 
   return (
     <div className="space-y-4">
@@ -105,21 +115,26 @@ export default function RecommendationsPage() {
       <section className="card space-y-3">
         <div className="flex items-center justify-between gap-3">
           <div className="font-semibold">{t('recommendations.watchlist')}</div>
-          {watchlist.data?.updated_at && (
-            <div className="text-xs text-muted">{fmtTime(watchlist.data.updated_at)}</div>
-          )}
+          <div className="text-xs text-muted">
+            {watchlist.data?.updated_at
+              ? t('recommendations.updated_at', { time: fmtTime(watchlist.data.updated_at) })
+              : t('recommendations.never_updated')}
+          </div>
         </div>
         <textarea
           className="input min-h-24 font-mono"
           value={watchlistText}
           onChange={(e) => setWatchlistText(e.target.value)}
-          placeholder={t('recommendations.watchlist_placeholder')}
+          placeholder="AAPL, MSFT, NVDA, TSLA, GOOGL"
         />
-        <div className="flex justify-end">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-xs text-muted">
+            {saveWatchlist.isSuccess ? t('recommendations.saved') : t('recommendations.select_hint')}
+          </div>
           <button
             type="button"
             className="btn-ghost"
-            disabled={saveWatchlist.isPending}
+            disabled={saveWatchlist.isPending || watchlist.isLoading}
             onClick={() => saveWatchlist.mutate()}
           >
             {t('recommendations.save_watchlist')}
@@ -143,58 +158,78 @@ export default function RecommendationsPage() {
             disabled={!selectedIds.length || analyze.isPending}
             onClick={() => analyze.mutate(selectedIds)}
           >
-            {analyze.isPending ? t('recommendations.analyzing') : t('recommendations.start_analysis')}
+            {t('recommendations.start_analysis')}
           </button>
         )}
       </section>
 
-      {error && (
+      {actionError && (
         <ErrorBox>
-          <span>{error.status} - {error.detail}</span>
-          {error.status === 409 && error.detail === 'model settings not configured' && (
+          <span>{actionError.status} · {actionError.detail}</span>
+          {actionError.status === 409 && (
             <Link to="/settings/model" className="text-[#ff4b4b] ml-2">
-              {t('recommendations.model_required')}
+              {t('analysis.configure_model')}
             </Link>
           )}
         </ErrorBox>
       )}
 
-      {analyze.data && (
-        <section className="card text-sm space-y-2">
-          {analyze.data.created.length > 0 && (
-            <div>
-              <div className="font-semibold mb-1">{t('recommendations.created_runs')}</div>
-              {analyze.data.created.map((row) => (
-                <div key={row.item_id} className="text-success">
-                  {row.ticker} - <Link to={`/analysis/${row.run_id}`} className="text-[#ff4b4b]">{row.run_id}</Link>
-                </div>
-              ))}
-            </div>
-          )}
-          {analyze.data.failed.length > 0 && (
-            <div>
-              <div className="font-semibold mb-1">{t('recommendations.failed_items')}</div>
-              {analyze.data.failed.map((row) => (
-                <div key={row.item_id} className="text-danger">
-                  {row.ticker ?? row.item_id}: {row.detail}
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      )}
+      {analyze.data && <AnalyzeResult response={analyze.data} />}
 
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-4">
-        <CurrentBatch batch={batch} selected={selected} setSelected={setSelected} />
+        <div>
+          <div className="font-semibold mb-3">{t('recommendations.current_batch')}</div>
+          {activeBatch.isLoading ? (
+            <div className="card text-sm text-muted">{t('common.loading')}</div>
+          ) : activeBatch.error ? (
+            <ErrorBox>{t('recommendations.batch_load_failed')}</ErrorBox>
+          ) : (
+            <CurrentBatch batch={batch} selected={selected} setSelected={setSelected} />
+          )}
+        </div>
         <History
           batches={batches.data ?? []}
           activeBatchId={activeBatchId}
-          setActiveBatchId={(id) => {
-            setSelected({});
-            setActiveBatchId(id);
-          }}
+          setActiveBatchId={setActiveBatchId}
+          loading={batches.isLoading}
+          error={Boolean(batches.error)}
         />
       </div>
+    </div>
+  );
+}
+
+function AnalyzeResult({ response }: { response: { created: { item_id: string; ticker: string; run_id: string }[]; failed: { item_id: string; ticker?: string | null; detail: string }[] } }) {
+  return (
+    <div className="card text-sm space-y-2">
+      {response.created.length > 0 && (
+        <div>
+          <div className="font-semibold mb-1">{t('recommendations.created_runs')}</div>
+          <div className="space-y-1">
+            {response.created.map((row) => (
+              <div key={row.item_id} className="text-success">
+                <span className="font-mono">{row.ticker}</span>
+                {' -> '}
+                <Link to={`/analysis/${row.run_id}`} className="text-[#ff4b4b]">
+                  {row.run_id}
+                </Link>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {response.failed.length > 0 && (
+        <div>
+          <div className="font-semibold mb-1 text-danger">{t('recommendations.partial_failures')}</div>
+          <div className="space-y-1">
+            {response.failed.map((row) => (
+              <div key={row.item_id} className="text-danger">
+                <span className="font-mono">{row.ticker ?? row.item_id}</span>: {row.detail}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -208,10 +243,10 @@ function CurrentBatch({
   selected: Record<string, boolean>;
   setSelected: Dispatch<SetStateAction<Record<string, boolean>>>;
 }) {
-  if (!batch) return <div className="card text-muted text-sm">{t('recommendations.no_batch')}</div>;
+  if (!batch) return <div className="card text-muted text-sm">{t('common.empty')}</div>;
+
   return (
     <section className="card overflow-x-auto">
-      <div className="font-semibold mb-3">{t('recommendations.current_batch')}</div>
       <table className="df">
         <thead>
           <tr>
@@ -240,20 +275,30 @@ function CurrentBatch({
                 <div className="text-xs text-muted">{t(`recommendations.source.${item.source}`)}</div>
               </td>
               <td>{item.priority}</td>
-              <td className="min-w-56">{item.reason}</td>
-              <td className="min-w-48">{item.risk}</td>
-              <td>{item.status}</td>
+              <td className="min-w-64">{item.reason}</td>
+              <td className="min-w-56">{item.risk}</td>
+              <td>
+                <span className={`badge ${STATUS_CLS[item.status]}`}>
+                  {item.status}
+                </span>
+                {item.error && <div className="text-xs text-danger mt-1">{item.error}</div>}
+              </td>
               <td>
                 {item.run_id ? (
                   <Link to={`/analysis/${item.run_id}`} className="text-[#ff4b4b]">
                     {item.run_id}
                   </Link>
                 ) : (
-                  '-'
+                  <span className="text-muted">—</span>
                 )}
               </td>
             </tr>
           ))}
+          {batch.items.length === 0 && (
+            <tr>
+              <td colSpan={7} className="py-4 text-muted text-center">{t('common.empty')}</td>
+            </tr>
+          )}
         </tbody>
       </table>
     </section>
@@ -264,30 +309,42 @@ function History({
   batches,
   activeBatchId,
   setActiveBatchId,
+  loading,
+  error,
 }: {
   batches: RecommendationBatchSummary[];
   activeBatchId: string | null;
   setActiveBatchId: (id: string) => void;
+  loading: boolean;
+  error: boolean;
 }) {
   return (
     <section className="card">
       <div className="font-semibold mb-3">{t('recommendations.history')}</div>
-      <div className="space-y-2">
-        {batches.map((batch) => (
-          <button
-            type="button"
-            key={batch.batch_id}
-            className={`btn-ghost btn-block justify-start ${activeBatchId === batch.batch_id ? 'border-[#ff4b4b]' : ''}`}
-            onClick={() => setActiveBatchId(batch.batch_id)}
-          >
-            <span className="text-left">
-              <span className="block font-mono text-xs">{batch.batch_id}</span>
-              <span className="block text-xs text-muted">{fmtTime(batch.created_at)} - {batch.item_count}</span>
-            </span>
-          </button>
-        ))}
-        {batches.length === 0 && <div className="text-sm text-muted">{t('common.empty')}</div>}
-      </div>
+      {loading ? (
+        <div className="text-sm text-muted">{t('common.loading')}</div>
+      ) : error ? (
+        <div className="text-sm text-danger">{t('common.load_failed')}</div>
+      ) : (
+        <div className="space-y-2">
+          {batches.map((batch) => (
+            <button
+              key={batch.batch_id}
+              type="button"
+              className={`btn-ghost btn-block justify-start ${activeBatchId === batch.batch_id ? 'border-[#ff4b4b]' : ''}`}
+              onClick={() => setActiveBatchId(batch.batch_id)}
+            >
+              <span className="text-left min-w-0">
+                <span className="block font-mono text-xs truncate">{batch.batch_id}</span>
+                <span className="block text-xs text-muted">
+                  {fmtTime(batch.created_at)} · {t('recommendations.item_count', { count: batch.item_count })}
+                </span>
+              </span>
+            </button>
+          ))}
+          {batches.length === 0 && <div className="text-sm text-muted">{t('common.empty')}</div>}
+        </div>
+      )}
     </section>
   );
 }
