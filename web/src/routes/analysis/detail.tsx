@@ -1,7 +1,8 @@
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { runsApi, type RunResult } from '@/api/runs';
+import { createProposal } from '@/api/tradeFlow';
 import { useRunEvents } from '@/hooks/useRunEvents';
 import { useAuth } from '@/hooks/useAuth';
 import { Subheader, ErrorBox } from '@/components/ui/Page';
@@ -60,6 +61,11 @@ export default function AnalysisDetailPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['run', runId] }),
   });
 
+  const propose = useMutation({
+    mutationFn: () => createProposal(runId!, run.data!.ticker),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['broker', 'approvals'] }),
+  });
+
   if (run.isLoading) return <div className="text-muted">{t('common.loading')}</div>;
   if (run.error || !run.data) return <ErrorBox>{t('analysis.not_found')}</ErrorBox>;
 
@@ -89,6 +95,25 @@ export default function AnalysisDetailPage() {
           </button>
         )}
       </div>
+
+      {canOperate && r.status === 'succeeded' && (
+        <div className="mb-4 flex items-center gap-3">
+          <button className="btn-primary" disabled={propose.isPending} onClick={() => propose.mutate()}>
+            {t('broker.proposal.generate')}
+          </button>
+          {propose.isSuccess && (
+            <span className="text-sm text-success">
+              {t('broker.proposal.created')}{' '}
+              <Link to="/broker/approvals" className="text-[#ff4b4b]">{t('nav.approvals')}</Link>
+            </span>
+          )}
+          {propose.isError && (
+            <span className="text-sm text-danger">
+              {t('broker.proposal.failed')}: {(propose.error as { detail?: string })?.detail}
+            </span>
+          )}
+        </div>
+      )}
 
       {r.status === 'succeeded' && (
         <DecisionCard

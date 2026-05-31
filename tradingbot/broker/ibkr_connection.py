@@ -191,6 +191,7 @@ class LocalIBKRConnection:
         connect_timeout: float = 10.0,
         snapshot_wait: float = 2.5,
         order_ack_wait: float = 1.0,
+        whatif_timeout: float = 12.0,
     ):
         self._host = host
         self._port = port
@@ -199,6 +200,7 @@ class LocalIBKRConnection:
         self._connect_timeout = connect_timeout
         self._snapshot_wait = snapshot_wait
         self._order_ack_wait = order_ack_wait
+        self._whatif_timeout = whatif_timeout
         self._ib = None
         self._last_error: Optional[str] = None
         self._contract_cache: Dict[str, object] = {}
@@ -356,7 +358,24 @@ class LocalIBKRConnection:
         ib = self._client()
         contract = self._contract(symbol)
         order = self._order_obj(side, quantity, order_type, limit_price, time_in_force, account)
-        state = ib.whatIfOrder(contract, order)
+        # whatIfOrder blocks until TWS replies; if 'Read-Only API' is enabled (or
+        # the API is unresponsive) the reply never comes, so bound it with a
+        # timeout and surface a clear, actionable error instead of hanging.
+        import asyncio
+
+        from ib_async import util
+
+        try:
+            state = util.run(
+                asyncio.wait_for(ib.whatIfOrderAsync(contract, order), self._whatif_timeout)
+            )
+        except (asyncio.TimeoutError, TimeoutError) as exc:
+            self._last_error = "whatIf timed out"
+            raise TimeoutError(
+                "whatIf preview timed out — in TWS/Gateway open "
+                "Global Configuration → API → Settings and DISABLE 'Read-Only API', "
+                "then reconnect."
+            ) from exc
         return WhatIfResult(
             init_margin=nan_to_none(getattr(state, "initMarginChange", None)),
             maint_margin=nan_to_none(getattr(state, "maintMarginChange", None)),

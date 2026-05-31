@@ -401,3 +401,45 @@ class BrokerOrder(Base):
     raw_event: Mapped[Optional[dict[str, Any]]] = mapped_column(JsonType, nullable=True)
 
     __table_args__ = (Index("idx_broker_orders_updated_at", "updated_at"),)
+
+
+class PortfolioSnapshot(Base):
+    """Daily account-equity snapshot, scoped per (user, account, broker).
+
+    Powers the equity curve / Sharpe / drawdown / total-return analytics. The
+    desktop pushes the live account equity while connected; exactly one row per
+    (user, account, broker, date), continuously updated to the day's latest
+    value. The (user, account, broker) tuple is the segmentation unit so future
+    additional accounts (other TWS accounts or other brokers) stay isolated.
+    """
+
+    __tablename__ = "portfolio_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    account_id: Mapped[str] = mapped_column(String, nullable=False)
+    broker: Mapped[str] = mapped_column(
+        String, nullable=False, default="ibkr", server_default=text("'ibkr'")
+    )
+    snapshot_date: Mapped[date] = mapped_column(Date, nullable=False)
+    cash: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    invested_value: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    total_value: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    daily_pnl: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    daily_pnl_pct: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    open_positions: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "account_id", "broker", "snapshot_date", name="uq_portfolio_snapshot_day"
+        ),
+        Index(
+            "idx_portfolio_snapshots_user_account_date",
+            "user_id",
+            "account_id",
+            "snapshot_date",
+        ),
+    )

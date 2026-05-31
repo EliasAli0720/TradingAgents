@@ -2,10 +2,14 @@ import { createBrowserRouter, Navigate } from 'react-router-dom';
 import AppLayout from './components/layout/AppLayout';
 import RequireAuth from './components/layout/RequireAuth';
 import RequireRole from './components/layout/RequireRole';
+import BrokerGate from './components/broker/BrokerGate';
 import PortfolioPage from './routes/placeholder/portfolio';
 import PerformancePage from './routes/placeholder/performance';
 import TradesPage from './routes/placeholder/trades';
 import RiskPage from './routes/placeholder/risk';
+import BrokerStatusPage from './routes/broker/status';
+import BrokerApprovalsPage from './routes/broker/approvals';
+import BrokerOrdersPage from './routes/broker/orders';
 import LoginPage from './routes/login';
 import AnalysisListPage from './routes/analysis/list';
 import AnalysisNewPage from './routes/analysis/new';
@@ -25,10 +29,13 @@ export const router = createBrowserRouter([
       { path: '/analysis', element: <AnalysisListPage /> },
       { path: '/analysis/new', element: <AnalysisNewPage /> },
       { path: '/analysis/:runId', element: <AnalysisDetailPage /> },
-      { path: '/portfolio', element: <PortfolioPage /> },
-      { path: '/performance', element: <PerformancePage /> },
-      { path: '/trades', element: <TradesPage /> },
-      { path: '/risk', element: <RiskPage /> },
+      { path: '/broker', element: <BrokerGate><BrokerStatusPage /></BrokerGate> },
+      { path: '/broker/approvals', element: <BrokerGate><BrokerApprovalsPage /></BrokerGate> },
+      { path: '/broker/orders', element: <BrokerGate><BrokerOrdersPage /></BrokerGate> },
+      { path: '/portfolio', element: <BrokerGate><PortfolioPage /></BrokerGate> },
+      { path: '/performance', element: <BrokerGate><PerformancePage /></BrokerGate> },
+      { path: '/trades', element: <BrokerGate><TradesPage /></BrokerGate> },
+      { path: '/risk', element: <BrokerGate><RiskPage /></BrokerGate> },
       { path: '/settings/model', element: <ModelSettingsPage /> },
       { path: '/settings/translation', element: <TranslationSettingsPage /> },
       { path: '/settings/account', element: <AccountSettingsPage /> },

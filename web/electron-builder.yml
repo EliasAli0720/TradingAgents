@@ -1,0 +1,43 @@
+# electron-builder config for the TradingAgents desktop app.
+# Run from web/ after `pnpm build` (renderer) and the sidecar PyInstaller build.
+#   pnpm build && pnpm sidecar:build && pnpm dist
+appId: com.tradingagents.desktop
+productName: TradingAgents
+copyright: © TradingAgents
+
+directories:
+  output: release
+  buildResources: build
+
+# App files packed into the asar. main.cjs loads dist/ over the app:// scheme.
+files:
+  - electron/**/*
+  - dist/**/*
+  - package.json
+
+# The PyInstaller sidecar bundle ships outside the asar as an executable.
+# `from` is relative to this config (web/); the bundle is at repo-root/dist-sidecar.
+extraResources:
+  - from: ../dist-sidecar/sidecar
+    to: sidecar
+    filter:
+      - '**/*'
+
+mac:
+  category: public.app-category.finance
+  target:
+    - dmg
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  # Dev builds are unsigned. For distribution set identity to your Developer ID
+  # and add notarization (see notarize hook / docs).
+  identity: null
+
+win:
+  target:
+    - nsis
+
+linux:
+  target:
+    - AppImage
+  category: Office

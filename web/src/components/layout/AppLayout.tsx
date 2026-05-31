@@ -5,10 +5,12 @@ import SettingsDrawer from './SettingsDrawer';
 import { PageTitle } from '@/components/ui/Page';
 import { t, syncLangFromServer } from '@/i18n';
 import { useAuth } from '@/hooks/useAuth';
+import { useSnapshotPush } from '@/hooks/useSnapshotPush';
 
 export default function AppLayout() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { user } = useAuth();
+  useSnapshotPush(); // push equity snapshots to the server while connected
 
   // Reconcile UI language with the DB-stored preference on mount / login.
   useEffect(() => {

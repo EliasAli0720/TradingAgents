@@ -2,6 +2,8 @@ import { NavLink } from 'react-router-dom';
 import clsx from 'clsx';
 import { useState } from 'react';
 import { getLocale, t } from '@/i18n';
+import QuickTrade from '@/components/broker/QuickTrade';
+import BrokerBadge from '@/components/broker/BrokerBadge';
 
 type Item = { to: string; label: string };
 
@@ -16,7 +18,10 @@ const GROUPS: { title: string; items: Item[] }[] = [
   {
     title: 'group.trading',
     items: [
+      { to: '/broker', label: 'nav.broker' },
       { to: '/portfolio', label: 'nav.portfolio' },
+      { to: '/broker/approvals', label: 'nav.approvals' },
+      { to: '/broker/orders', label: 'nav.orders' },
       { to: '/performance', label: 'nav.performance' },
       { to: '/trades', label: 'nav.trades' },
       { to: '/risk', label: 'nav.risk' },
@@ -24,14 +29,10 @@ const GROUPS: { title: string; items: Item[] }[] = [
   },
 ];
 
-const MODE = { paper: true, broker: 'MOCK' };
 const WATCHLIST = ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'GOOGL'];
 
 export default function Sidebar() {
   const [refreshAt, setRefreshAt] = useState(() => new Date());
-
-  const modeWord = MODE.paper ? t('app.sidebar.mode_paper') : t('app.sidebar.mode_live');
-  const modeColor = MODE.paper ? 'bg-success' : 'bg-danger';
 
   return (
     <aside className="w-72 shrink-0 h-full overflow-y-auto bg-panel border-r border-border p-4 text-sm">
@@ -41,9 +42,9 @@ export default function Sidebar() {
         {t('app.sidebar.last_refresh', { time: refreshAt.toLocaleTimeString(getLocale(), { hour12: false }) })}
       </div>
 
-      {/* Mode pill */}
-      <div className={clsx('mode-pill text-white mb-3', modeColor)}>
-        {modeWord} — {MODE.broker}
+      {/* Mode pill — reflects the connected broker account (mock / real) */}
+      <div className="mb-3">
+        <BrokerBadge />
       </div>
 
       <div className="st-divider" />
@@ -84,18 +85,8 @@ export default function Sidebar() {
 
       <div className="st-divider" />
 
-      {/* Quick trade (placeholder until POST /orders exists) */}
-      <div className="font-semibold mb-2">{t('qt.header')}</div>
-      <div className="space-y-2 opacity-60">
-        <input className="input" placeholder={t('qt.ticker')} disabled />
-        <select className="input" disabled>
-          <option>{t('qt.side.buy')}</option>
-          <option>{t('qt.side.sell')}</option>
-        </select>
-        <input className="input" type="number" placeholder={t('qt.qty')} disabled />
-        <button className="btn-primary btn-block" disabled>{t('qt.submit')}</button>
-        <div className="text-xs text-muted">{t('qt.disabled')}</div>
-      </div>
+      {/* Manual quick order — places on the connected account via the sidecar */}
+      <QuickTrade />
     </aside>
   );
 }
