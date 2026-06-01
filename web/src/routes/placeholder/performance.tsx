@@ -47,7 +47,7 @@ export default function PerformancePage() {
     return (
       <div>
         <Subheader>{t('nav.performance')}</Subheader>
-        <Info>{t('broker.status.not_connected_hint')}</Info>
+        <Info>{t('broker.not_connected_generic')}</Info>
       </div>
     );
   }

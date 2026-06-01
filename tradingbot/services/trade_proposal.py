@@ -54,6 +54,10 @@ class TradeProposalBuilder:
         account = self._broker.get_account()
         if instruction.side == OrderSide.BUY:
             qty = self._mapper.compute_buy_qty(instruction, account.cash, price)
+            if 0 < qty < 1:
+                if account.cash < price:
+                    return ProposalOutcome(False, None, "insufficient cash for 1 share")
+                qty = 1
         else:
             position = self._broker.get_position(ticker)
             qty = self._mapper.compute_sell_qty(instruction, position.qty if position else 0.0)

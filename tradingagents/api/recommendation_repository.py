@@ -186,6 +186,42 @@ class RecommendationRepository:
         item.error = detail
         item.updated_at = utcnow()
 
+    def reset_for_retry(self, item: RecommendationItem) -> None:
+        """Detach a finished/failed run so the item can be analyzed again."""
+        item.status = "recommended"
+        item.run_id = None
+        item.error = None
+        item.updated_at = utcnow()
+
+    def reconcile_run_statuses(
+        self, items: list[RecommendationItem]
+    ) -> dict[str, str]:
+        """Return ``{item_id: live AnalysisRun.status}`` for items that have a
+        run, and flip items whose run terminally failed/cancelled to
+        ``analysis_failed`` (so the page stops showing them stuck and they
+        become retryable). Caller is responsible for committing.
+        """
+        run_ids = [item.run_id for item in items if item.run_id]
+        if not run_ids:
+            return {}
+        runs = {
+            run.run_id: run
+            for run in self.session.scalars(
+                select(AnalysisRun).where(AnalysisRun.run_id.in_(run_ids))
+            )
+        }
+        live: dict[str, str] = {}
+        for item in items:
+            run = runs.get(item.run_id) if item.run_id else None
+            if run is None:
+                continue
+            live[item.item_id] = run.status
+            if run.status in ("failed", "cancelled") and item.status == "analysis_queued":
+                item.status = "analysis_failed"
+                item.error = run.error or f"analysis {run.status}"
+                item.updated_at = utcnow()
+        return live
+
     def recent_analysis_context(self, user_id: str, limit: int = 10) -> list[dict[str, Any]]:
         stmt = (
             select(AnalysisRun, AnalysisRunResult)

@@ -26,10 +26,11 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from tradingagents.api.broker_credential_repository import (
+    API_KEY,
     CONNECTED,
     WEBULL,
     BrokerCredentialRepository,
@@ -61,6 +62,14 @@ class WebullStatusResponse(BaseModel):
     region: Optional[str] = None
     scope: Optional[str] = None
     token_expires_at: Optional[str] = None
+    auth_type: Optional[str] = None
+
+
+class WebullApiKeyConnectRequest(BaseModel):
+    app_key: str = Field(min_length=1)
+    app_secret: str = Field(min_length=1)
+    account_id: Optional[str] = None
+    region: Optional[str] = None
 
 
 # --------------------------------------------------------------------------- #
@@ -78,6 +87,31 @@ def get_oauth_client(config: dict = Depends(get_config)):
             detail="Webull OAuth is not configured",
         )
     return client
+
+
+def get_api_key_account_resolver(config: dict = Depends(get_config)):
+    """Return a validator/listing function for Trading API direct credentials."""
+
+    def _resolve(app_key: str, app_secret: str, region: str, paper: bool, endpoint: str):
+        from tradingbot.broker.webull_client import SdkWebullClient
+
+        client = SdkWebullClient(
+            access_token="",
+            app_key=app_key,
+            app_secret=app_secret,
+            auth_type=API_KEY,
+            region=region,
+            paper=paper,
+            endpoint=endpoint or None,
+            connect_timeout=float(config.get("webull_connect_timeout", 10) or 10),
+            read_timeout=float(config.get("webull_read_timeout", 30) or 30),
+        )
+        health = client.health()
+        if not health.get("connected"):
+            raise RuntimeError(str(health.get("last_error") or "Webull API key validation failed"))
+        return list(health.get("accounts") or [])
+
+    return _resolve
 
 
 # --------------------------------------------------------------------------- #
@@ -115,6 +149,39 @@ def authorize(
     oauth_client=Depends(get_oauth_client),
 ):
     return AuthorizeResponse(authorize_url=oauth_client.authorize_url(_encode_state(user.user_id)))
+
+
+@router.post("/api-key", response_model=WebullStatusResponse)
+def connect_api_key(
+    body: WebullApiKeyConnectRequest,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+    config: dict = Depends(get_config),
+    account_resolver=Depends(get_api_key_account_resolver),
+):
+    app_key = body.app_key.strip()
+    app_secret = body.app_secret.strip()
+    if not app_key or not app_secret:
+        raise HTTPException(status_code=422, detail="app_key and app_secret are required")
+
+    region = (body.region or str(config.get("webull_region", "us"))).strip() or "us"
+    paper = bool(config.get("paper_trading", True))
+    endpoint = str(config.get("webull_endpoint", "") or "")
+    try:
+        accounts = account_resolver(app_key, app_secret, region, paper, endpoint)
+    except Exception as exc:  # noqa: BLE001 - surface validation as a 4xx
+        raise HTTPException(status_code=400, detail=f"Webull API key validation failed: {exc}") from exc
+
+    account_id = _select_api_key_account(accounts, body.account_id)
+    repo = BrokerCredentialRepository(session, user.user_id)
+    cred = repo.upsert_api_key(
+        app_key=app_key,
+        app_secret=app_secret,
+        account_id=account_id,
+        region=region,
+    )
+    session.commit()
+    return _status_resp(cred)
 
 
 @router.get("/callback")
@@ -159,6 +226,8 @@ def refresh(
     cred = repo.get(WEBULL)
     if cred is None:
         raise HTTPException(status_code=404, detail="not connected")
+    if cred.auth_type == API_KEY:
+        return _status_resp(cred)
     refresh_token = repo.refresh_token(cred)
     if not refresh_token:
         repo.mark_expired(WEBULL)
@@ -219,6 +288,20 @@ def _q(value: str) -> str:
     return quote(value, safe="")
 
 
+def _select_api_key_account(accounts: list[str], requested: Optional[str]) -> str:
+    clean_accounts = [str(a).strip() for a in accounts if str(a).strip()]
+    if requested:
+        account_id = requested.strip()
+        if clean_accounts and account_id not in clean_accounts:
+            raise HTTPException(status_code=400, detail="account_id not returned by Webull")
+        return account_id
+    if len(clean_accounts) == 1:
+        return clean_accounts[0]
+    if len(clean_accounts) > 1:
+        raise HTTPException(status_code=409, detail="multiple Webull accounts found; account_id required")
+    raise HTTPException(status_code=409, detail="no Webull account found; account_id required")
+
+
 def _status_resp(cred) -> WebullStatusResponse:
     if cred is None:
         return WebullStatusResponse(connected=False, status="not_connected")
@@ -229,4 +312,5 @@ def _status_resp(cred) -> WebullStatusResponse:
         region=cred.region,
         scope=cred.scope,
         token_expires_at=cred.token_expires_at.isoformat() if cred.token_expires_at else None,
+        auth_type=cred.auth_type,
     )

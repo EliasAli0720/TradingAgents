@@ -526,8 +526,15 @@ class BrokerCredential(Base):
     region: Mapped[str] = mapped_column(
         String, nullable=False, default="us", server_default=text("'us'")
     )
+    # oauth: Connect API authorization-code tokens.
+    # api_key: user-supplied Trading API app_key/app_secret.
+    auth_type: Mapped[str] = mapped_column(
+        String, nullable=False, default="oauth", server_default=text("'oauth'")
+    )
     access_token_enc: Mapped[str] = mapped_column(Text, nullable=False)
     refresh_token_enc: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    app_key_enc: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    app_secret_enc: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     token_expires_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

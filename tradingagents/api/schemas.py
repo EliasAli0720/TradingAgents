@@ -145,6 +145,10 @@ class RecommendationItemResponse(BaseModel):
         "ignored",
     ]
     run_id: Optional[str] = None
+    # Live status of the linked analysis run (queued/dispatching/running/
+    # succeeded/failed/cancelled) so the page reflects progress instead of
+    # staying stuck on "analysis_queued".
+    run_status: Optional[str] = None
     error: Optional[str] = None
 
 
@@ -163,7 +167,9 @@ class RecommendationBatchSummaryResponse(BaseModel):
 
 
 class GenerateRecommendationsRequest(BaseModel):
-    pass
+    # UI language ("zh"/"en"); the model writes reason/risk in this language so
+    # recommendations honour the user's i18n setting. Defaults to English.
+    language: Optional[str] = None
 
 
 class AnalyzeRecommendationsRequest(BaseModel):

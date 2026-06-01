@@ -162,9 +162,15 @@ class GraphSetup:
         if self.cancellation_token is None:
             return fn
 
+        # Some nodes are plain callables (agent closures), others are LangGraph
+        # Runnables like ToolNode which are NOT directly callable and must be
+        # driven via .invoke — calling fn(state) on those raises
+        # "'ToolNode' object is not callable".
+        invoke = fn.invoke if hasattr(fn, "invoke") else fn
+
         def _wrapped(state):
             self.cancellation_token.raise_if_cancelled()
-            result = fn(state)
+            result = invoke(state)
             self.cancellation_token.raise_if_cancelled()
             return result
 

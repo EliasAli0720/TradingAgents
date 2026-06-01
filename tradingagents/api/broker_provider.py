@@ -24,6 +24,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from tradingagents.api.broker_credential_repository import (
+    API_KEY,
     CONNECTED,
     WEBULL,
     BrokerCredentialRepository,
@@ -47,6 +48,8 @@ def resolve_active_broker(session: Session, user: User, config: dict) -> str:
 
 
 def _needs_refresh(cred: BrokerCredential) -> bool:
+    if cred.auth_type == API_KEY:
+        return False
     if cred.token_expires_at is None:
         return True
     expires_at = cred.token_expires_at
@@ -108,15 +111,27 @@ def build_user_broker(
 
     repo = BrokerCredentialRepository(session, user.user_id)
     cred = repo.require(WEBULL)
-    if oauth_client is None:
-        oauth_client = oauth_client_from_config(config)
-    token = ensure_fresh_token(cred, repo, oauth_client)
-    session.commit()  # persist a rolling refresh before we use the token
+    if cred.auth_type == API_KEY:
+        token = ""
+        app_key = repo.app_key(cred)
+        app_secret = repo.app_secret(cred)
+        auth_type = API_KEY
+    else:
+        if oauth_client is None:
+            oauth_client = oauth_client_from_config(config)
+        token = ensure_fresh_token(cred, repo, oauth_client)
+        session.commit()  # persist a rolling refresh before we use the token
+        app_key = str(config.get("webull_app_key", ""))
+        app_secret = str(config.get("webull_app_secret", ""))
+        auth_type = "oauth"
 
     cfg = dict(config)
     cfg.update(
         broker="webull",
+        webull_auth_type=auth_type,
         webull_access_token=token,
+        webull_app_key=app_key,
+        webull_app_secret=app_secret,
         webull_account_id=cred.account_id or "",
         webull_region=cred.region,
     )
@@ -150,6 +165,8 @@ def status_for(
 
 def _refresh_token_dead(cred: BrokerCredential) -> bool:
     """True when the refresh token is gone/expired → re-auth required."""
+    if cred.auth_type == API_KEY:
+        return False
     if not cred.refresh_token_enc:
         # No refresh token: only the access token keeps us alive.
         if cred.token_expires_at is None:

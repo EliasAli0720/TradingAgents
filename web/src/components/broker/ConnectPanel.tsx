@@ -4,6 +4,7 @@ import { useBrokerConnection } from '@/hooks/useBrokerConnection';
 import type { BrokerCandidate, ConnectOpts } from '@/api/brokerChannel';
 import { Subheader, Caption, Info, ErrorBox } from '@/components/ui/Page';
 import { t } from '@/i18n';
+import WebullConnectCard from './WebullConnectCard';
 
 function Step({ ok, label }: { ok: boolean; label: string }) {
   return (
@@ -193,6 +194,10 @@ export default function ConnectPanel() {
 
       <div className="mt-3 max-w-md">
         <Info>{t('broker.connect.hint')}</Info>
+      </div>
+
+      <div className="mt-6">
+        <WebullConnectCard />
       </div>
     </div>
   );

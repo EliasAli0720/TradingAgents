@@ -37,7 +37,11 @@ dependencies = [
     "fastapi>=0.115.0",
     "uvicorn>=0.34.0",
     "celery>=5.4.0",
-    "cryptography>=48.0.0",
+    # Webull's official 2.x SDK pins cryptography below 42 on Python <3.12 and
+    # below 43 on newer Python. Fernet support used by our encrypted secrets is
+    # available across these ranges.
+    "cryptography>=41,<42; python_version < '3.12'",
+    "cryptography>=42.0.8,<43; python_version >= '3.12'",
     "sqlalchemy>=2.0.0",
     "psycopg[binary]>=3.2.0",
     "httpx>=0.28.0",
@@ -49,7 +53,7 @@ dependencies = [
 # Webull Connect API broker (cloud REST). Optional so lean installs and the
 # sidecar bundle don't pull it; WebullBroker imports it lazily. Install with:
 #   pip install ".[webull]"
-webull = ["webull-openapi-python-sdk>=0.1.18"]
+webull = ["webull-openapi-python-sdk>=2.0.9,<3"]
 
 [project.scripts]
 tradingagents = "cli.main:app"

@@ -31,6 +31,7 @@ export type BrokerPosition = {
 
 export type BrokerOrder = {
   broker_order_id: string;
+  account_id: string | null;
   ticker: string;
   side: string;
   order_type: string;
@@ -152,6 +153,23 @@ export type WebullConnectionStatus = {
   region: string | null;
   scope: string | null;
   token_expires_at: string | null;
+  auth_type: 'oauth' | 'api_key' | string | null;
+};
+
+export type WebullApiKeyPayload = {
+  app_key: string;
+  app_secret: string;
+  account_id?: string;
+  region?: string;
+};
+
+export type OrderPayload = {
+  ticker: string;
+  qty: number;
+  side: 'buy' | 'sell';
+  order_type?: 'market' | 'limit';
+  limit_price?: number;
+  time_in_force?: string;
 };
 
 export const brokerApi = {
@@ -208,6 +226,12 @@ export const brokerApi = {
   async refresh(): Promise<BrokerStatus> {
     return (await http.post<BrokerStatus>('/broker/refresh')).data;
   },
+  async previewOrder(payload: OrderPayload): Promise<PreviewResult> {
+    return (await http.post<PreviewResult>('/broker/orders/preview', payload)).data;
+  },
+  async placeOrder(payload: OrderPayload): Promise<BrokerOrder> {
+    return (await http.post<BrokerOrder>('/broker/orders', payload)).data;
+  },
   // Portfolio analytics — server-side, scoped to (user, account, broker).
   async performance(accountId: string, broker = 'ibkr'): Promise<PerformanceData> {
     return (await http.get<PerformanceData>('/broker/performance', { params: { account_id: accountId, broker } })).data;
@@ -242,6 +266,9 @@ export const brokerApi = {
     async authorizeUrl(): Promise<string> {
       return (await http.get<{ authorize_url: string }>('/broker/oauth/webull/authorize')).data
         .authorize_url;
+    },
+    async connectApiKey(payload: WebullApiKeyPayload): Promise<WebullConnectionStatus> {
+      return (await http.post<WebullConnectionStatus>('/broker/oauth/webull/api-key', payload)).data;
     },
     async refresh(): Promise<WebullConnectionStatus> {
       return (await http.post<WebullConnectionStatus>('/broker/oauth/webull/refresh')).data;

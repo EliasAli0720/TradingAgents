@@ -200,4 +200,11 @@ def test_dispatcher_rejects_missing_task_id_without_stranding_run():
     assert saved.celery_task_id is None
     assert saved.dispatched_at is None
     assert saved.lease_expires_at is None
-    assert [event.event_type for event in repo.list_events(run.run_id)] == ["run_queued"]
+    # The dispatching status is committed before enqueue (to avoid the
+    # worker-runs-before-commit race), so a failed enqueue leaves a visible
+    # dispatching→requeued trail rather than a silent rollback.
+    assert [event.event_type for event in repo.list_events(run.run_id)] == [
+        "run_queued",
+        "run_dispatching",
+        "run_requeued",
+    ]

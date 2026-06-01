@@ -22,9 +22,13 @@ from tradingagents.api.models import BrokerCredential
 
 WEBULL = "webull"
 
+OAUTH = "oauth"
+API_KEY = "api_key"
 CONNECTED = "connected"
 EXPIRED = "expired"
 REVOKED = "revoked"
+
+_API_KEY_ACCESS_PLACEHOLDER = "__webull_api_key__"
 
 
 def _utcnow() -> datetime:
@@ -67,6 +71,18 @@ class BrokerCredentialRepository:
             return None
         return decrypt_secret(cred.refresh_token_enc)
 
+    @staticmethod
+    def app_key(cred: BrokerCredential) -> str:
+        if not cred.app_key_enc:
+            raise RuntimeError("Webull app key is not stored for this credential")
+        return decrypt_secret(cred.app_key_enc)
+
+    @staticmethod
+    def app_secret(cred: BrokerCredential) -> str:
+        if not cred.app_secret_enc:
+            raise RuntimeError("Webull app secret is not stored for this credential")
+        return decrypt_secret(cred.app_secret_enc)
+
     # -- writes ----------------------------------------------------------- #
 
     def upsert(
@@ -91,8 +107,11 @@ class BrokerCredentialRepository:
                 broker=broker,
                 account_id=account_id,
                 region=region,
+                auth_type=OAUTH,
                 access_token_enc=access_enc,
                 refresh_token_enc=refresh_enc,
+                app_key_enc=None,
+                app_secret_enc=None,
                 token_expires_at=_expiry(expires_in),
                 refresh_expires_at=_expiry(refresh_expires_in),
                 scope=scope,
@@ -107,12 +126,72 @@ class BrokerCredentialRepository:
         if refresh_enc is not None:
             cred.refresh_token_enc = refresh_enc
             cred.refresh_expires_at = _expiry(refresh_expires_in)
+        else:
+            cred.refresh_token_enc = None
+            cred.refresh_expires_at = None
         cred.token_expires_at = _expiry(expires_in)
         if account_id is not None:
             cred.account_id = account_id
         cred.region = region
+        cred.auth_type = OAUTH
+        cred.app_key_enc = None
+        cred.app_secret_enc = None
         if scope is not None:
             cred.scope = scope
+        cred.status = CONNECTED
+        cred.updated_at = now
+        return cred
+
+    def upsert_api_key(
+        self,
+        *,
+        broker: str = WEBULL,
+        app_key: str,
+        app_secret: str,
+        account_id: Optional[str] = None,
+        region: str = "us",
+    ) -> BrokerCredential:
+        """Store user-supplied Webull Trading API credentials.
+
+        ``access_token_enc`` remains non-null for compatibility with existing
+        DB rows; API-key mode reads only ``app_key_enc`` / ``app_secret_enc``.
+        """
+        cred = self.get(broker)
+        now = _utcnow()
+        app_key_enc = encrypt_secret(app_key)
+        app_secret_enc = encrypt_secret(app_secret)
+        access_enc = encrypt_secret(_API_KEY_ACCESS_PLACEHOLDER)
+        if cred is None:
+            cred = BrokerCredential(
+                user_id=self.user_id,
+                broker=broker,
+                account_id=account_id,
+                region=region,
+                auth_type=API_KEY,
+                access_token_enc=access_enc,
+                refresh_token_enc=None,
+                app_key_enc=app_key_enc,
+                app_secret_enc=app_secret_enc,
+                token_expires_at=None,
+                refresh_expires_at=None,
+                scope=None,
+                status=CONNECTED,
+                created_at=now,
+                updated_at=now,
+            )
+            self.session.add(cred)
+            return cred
+
+        cred.account_id = account_id
+        cred.region = region
+        cred.auth_type = API_KEY
+        cred.access_token_enc = access_enc
+        cred.refresh_token_enc = None
+        cred.app_key_enc = app_key_enc
+        cred.app_secret_enc = app_secret_enc
+        cred.token_expires_at = None
+        cred.refresh_expires_at = None
+        cred.scope = None
         cred.status = CONNECTED
         cred.updated_at = now
         return cred
@@ -150,6 +229,8 @@ class BrokerCredentialRepository:
             # Drop the secrets on revoke — keep the row for audit only.
             cred.access_token_enc = encrypt_secret("revoked")
             cred.refresh_token_enc = None
+            cred.app_key_enc = None
+            cred.app_secret_enc = None
             cred.token_expires_at = None
             cred.refresh_expires_at = None
             cred.updated_at = _utcnow()

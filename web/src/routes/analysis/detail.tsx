@@ -2,15 +2,19 @@ import { useParams, Link } from 'react-router-dom';
 import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { runsApi, type RunResult } from '@/api/runs';
+import { brokerApi } from '@/api/broker';
+import { getBrokerChannel, isDesktop } from '@/api/brokerChannel';
+import { isUsableBrokerStatus, shouldUseServerProposal } from '@/api/brokerReadiness';
 import { createProposal } from '@/api/tradeFlow';
 import { useRunEvents } from '@/hooks/useRunEvents';
 import { useAuth } from '@/hooks/useAuth';
-import { Subheader, ErrorBox } from '@/components/ui/Page';
+import { Subheader, ErrorBox, Info } from '@/components/ui/Page';
 import { StatusBadge } from './list';
 import { t, getLang } from '@/i18n';
 import DecisionCard from '@/components/run/DecisionCard';
 import AgentReportTabs, { type ReportMap } from '@/components/run/AgentReportTabs';
 import RunProgress from '@/components/run/RunProgress';
+import { proposalButtonLabelKey, proposalEligibility } from './proposalEligibility';
 
 const LIVE_STATUSES = new Set(['queued', 'dispatching', 'running', 'cancelling']);
 
@@ -56,6 +60,23 @@ export default function AnalysisDetailPage() {
     },
   });
 
+  const brokerStatusEnabled = canOperate && run.data?.status === 'succeeded';
+  const desktop = isDesktop();
+  const serverBrokerStatus = useQuery({
+    queryKey: ['broker', 'status', 'server'],
+    queryFn: () => brokerApi.status(),
+    enabled: brokerStatusEnabled,
+    refetchInterval: 30000,
+    retry: 1,
+  });
+  const localBrokerStatus = useQuery({
+    queryKey: ['broker', 'status', 'local'],
+    queryFn: () => getBrokerChannel().status(),
+    enabled: brokerStatusEnabled && desktop,
+    refetchInterval: 5000,
+    retry: 1,
+  });
+
   const cancel = useMutation({
     mutationFn: () => runsApi.cancel(runId!),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['run', runId] }),
@@ -72,6 +93,23 @@ export default function AnalysisDetailPage() {
   const r = run.data;
   const cancellable = r.status === 'queued' || r.status === 'dispatching' || r.status === 'running';
   const reports = (result.data?.reports ?? {}) as ReportMap;
+  const proposal = proposalEligibility({
+    canOperate,
+    runStatus: r.status,
+    decision: result.data?.decision,
+    brokerStatusLoading:
+      brokerStatusEnabled &&
+      (serverBrokerStatus.isLoading ||
+        (desktop && !shouldUseServerProposal(serverBrokerStatus.data) && localBrokerStatus.isLoading)),
+    hasUsableBrokerAccount: desktop
+      ? shouldUseServerProposal(serverBrokerStatus.data) || isUsableBrokerStatus(localBrokerStatus.data)
+      : isUsableBrokerStatus(serverBrokerStatus.data),
+  });
+  const proposalError = propose.error as { detail?: string } | null;
+  const proposalErrorDetail =
+    proposalError?.detail === 'broker_not_connected'
+      ? t('broker.proposal.connect_account_hint')
+      : proposalError?.detail;
 
   return (
     <div>
@@ -96,11 +134,29 @@ export default function AnalysisDetailPage() {
         )}
       </div>
 
-      {canOperate && r.status === 'succeeded' && (
+      {proposal.state !== 'hidden' && (
         <div className="mb-4 flex items-center gap-3">
-          <button className="btn-primary" disabled={propose.isPending} onClick={() => propose.mutate()}>
-            {t('broker.proposal.generate')}
-          </button>
+          {proposal.state === 'waiting' && (
+            <button className="btn-primary" disabled>
+              {t('common.loading')}
+            </button>
+          )}
+          {proposal.state === 'actionable' && (
+            <button className="btn-primary" disabled={propose.isPending} onClick={() => propose.mutate()}>
+              {t(proposalButtonLabelKey(propose.isPending))}
+            </button>
+          )}
+          {proposal.state === 'connect_account' && (
+            <>
+              <Info>{t('broker.proposal.connect_account_hint')}</Info>
+              <Link to="/broker" className="btn-primary">
+                {t('broker.proposal.connect_account')}
+              </Link>
+            </>
+          )}
+          {proposal.state === 'no_action' && (
+            <Info>{t('broker.proposal.no_action', { signal: proposal.signal || 'HOLD' })}</Info>
+          )}
           {propose.isSuccess && (
             <span className="text-sm text-success">
               {t('broker.proposal.created')}{' '}
@@ -109,7 +165,7 @@ export default function AnalysisDetailPage() {
           )}
           {propose.isError && (
             <span className="text-sm text-danger">
-              {t('broker.proposal.failed')}: {(propose.error as { detail?: string })?.detail}
+              {t('broker.proposal.failed')}: {proposalErrorDetail}
             </span>
           )}
         </div>

@@ -6,23 +6,13 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, ValidationError
 
 
 PROMPT_VERSION = "stock-recommendations-v1"
 _TICKER_RE = re.compile(r"^[A-Z0-9._\-^]{1,32}$")
 
 
-class _RecommendationItem(BaseModel):
-    ticker: str
-    source: Literal["watchlist", "model_expansion"]
-    priority: int = Field(ge=1)
-    reason: str
-    risk: str
-
-
-class _RecommendationResponse(BaseModel):
-    recommendations: list[_RecommendationItem]
+_ALLOWED_SOURCES = {"watchlist", "model_expansion"}
 
 
 @dataclass(frozen=True)
@@ -63,49 +53,95 @@ def _content_to_text(content: Any) -> str:
 
 
 def parse_recommendations(raw: str) -> list[RecommendationCandidate]:
-    response = _parse_response(raw)
-    if response is None:
+    """Parse the model output leniently: take whatever valid items we can and
+    skip/repair the rest, rather than discarding the whole batch when a single
+    item is malformed (a wrong ``source`` value, missing field, bad priority).
+    """
+    payload = _extract_json_object(raw)
+    items = payload.get("recommendations") if payload else None
+    if not isinstance(items, list):
         return []
 
     candidates: list[RecommendationCandidate] = []
     seen: set[str] = set()
-    for item in response.recommendations:
-        ticker = item.ticker.strip().upper()
-        if not _TICKER_RE.fullmatch(ticker):
+    for index, item in enumerate(items):
+        if not isinstance(item, dict):
             continue
-        if ticker in seen:
+        ticker = str(item.get("ticker", "")).strip().upper()
+        if not _TICKER_RE.fullmatch(ticker) or ticker in seen:
             continue
-
         seen.add(ticker)
+
+        # Models occasionally invent a source ("market", "expansion", …) — treat
+        # anything unknown as a broad-market pick instead of dropping the item.
+        source = str(item.get("source", "")).strip().lower()
+        if source not in _ALLOWED_SOURCES:
+            source = "model_expansion"
+
+        try:
+            priority = int(item.get("priority", index + 1))
+        except (TypeError, ValueError):
+            priority = index + 1
+        if priority < 1:
+            priority = index + 1
+
         candidates.append(
             RecommendationCandidate(
                 ticker=ticker,
-                source=item.source,
-                priority=item.priority,
-                reason=item.reason.strip(),
-                risk=item.risk.strip(),
+                source=source,  # type: ignore[arg-type]
+                priority=priority,
+                reason=str(item.get("reason", "") or "").strip(),
+                risk=str(item.get("risk", "") or "").strip(),
             )
         )
 
     return candidates
 
 
-def _parse_response(raw: str) -> _RecommendationResponse | None:
-    try:
-        return _RecommendationResponse.model_validate_json(raw)
-    except (ValidationError, ValueError):
-        pass
+def _extract_json_object(raw: str) -> dict | None:
+    """Pull the recommendations JSON object out of arbitrary model text.
 
-    start = raw.find("{")
-    end = raw.rfind("}")
-    if start == -1 or end == -1 or end < start:
+    Tolerates Markdown code fences, ``<think>`` reasoning blocks, and prose
+    around the JSON: scans for the first balanced ``{...}`` that parses and
+    contains a ``recommendations`` key (``json.raw_decode`` handles braces inside
+    strings correctly, unlike a naive first-brace/last-brace slice).
+    """
+    if not raw:
         return None
+    text = re.sub(r"<think>.*?</think>", " ", raw, flags=re.DOTALL | re.IGNORECASE)
+    decoder = json.JSONDecoder()
+    idx = 0
+    while True:
+        start = text.find("{", idx)
+        if start == -1:
+            return None
+        try:
+            obj, _end = decoder.raw_decode(text, start)
+        except ValueError:
+            idx = start + 1
+            continue
+        if isinstance(obj, dict) and "recommendations" in obj:
+            return obj
+        idx = start + 1
 
-    try:
-        payload = json.loads(raw[start : end + 1])
-        return _RecommendationResponse.model_validate(payload)
-    except (ValidationError, ValueError, TypeError):
-        return None
+
+_LANGUAGE_NAMES = {
+    "zh": "Simplified Chinese (简体中文)",
+    "zh-cn": "Simplified Chinese (简体中文)",
+    "en": "English",
+    "en-us": "English",
+}
+
+
+def _language_instruction(language: str | None) -> str:
+    """Tell the model which language to write reason/risk in (tickers stay as
+    symbols). Empty string for unknown/unset languages → default English."""
+    if not language:
+        return ""
+    name = _LANGUAGE_NAMES.get(language.strip().lower())
+    if name is None:
+        return ""
+    return f'Write the "reason" and "risk" fields in {name}; keep ticker symbols unchanged.'
 
 
 class RecommendationGenerator:
@@ -117,15 +153,24 @@ class RecommendationGenerator:
         watchlist: list[str],
         recent_context: list[dict[str, Any]],
         today: date,
+        language: str | None = None,
     ) -> list[RecommendationCandidate]:
+        has_watchlist = bool(watchlist)
         system = (
             "You are generating stock pre-analysis triage candidates. "
             "Return valid JSON only with a recommendations array. "
             "Recommend exactly 5 tickers when possible. "
-            "Prefer stocks from the provided watchlist, but you may include "
-            'source="model_expansion" candidates when they are useful. '
-            "Do not claim that full analysis has already happened; only explain "
-            "why each ticker may deserve pre-analysis."
+            + (
+                'Prefer stocks from the provided watchlist, but you may include '
+                'source="model_expansion" candidates when they are useful. '
+                if has_watchlist
+                else "The watchlist is empty, so recommend across the broad market: "
+                "pick the most compelling, liquid, widely-traded stocks you would "
+                'flag for pre-analysis today, and mark every candidate source="model_expansion". '
+            )
+            + "Do not claim that full analysis has already happened; only explain "
+            "why each ticker may deserve pre-analysis. "
+            + _language_instruction(language)
         )
         user = {
             "date": today.isoformat(),

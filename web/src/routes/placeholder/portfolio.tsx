@@ -37,7 +37,7 @@ export default function PortfolioPage() {
       <Subheader>{t('portfolio.current')}</Subheader>
 
       {!connected ? (
-        <Info>{t('broker.status.not_connected_hint')}</Info>
+        <Info>{t('broker.not_connected_generic')}</Info>
       ) : (
         <>
           <KpiRow>

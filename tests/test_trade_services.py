@@ -71,6 +71,29 @@ def test_buy_proposal_sized_and_persisted():
     assert out.approval.status == "pending"
 
 
+def test_buy_proposal_uses_one_share_minimum_when_affordable():
+    repo, session = _repo()
+    broker, _ = _broker(cash=5_000.0, price=420.0)
+    builder = TradeProposalBuilder(broker, SignalMapper())  # target = 250 / 420 < 1 share
+    out = builder.build(
+        repo=repo, requested_by_user_id="u1", ticker="MSFT", signal="BUY", run_id="run-msft"
+    )
+    session.commit()
+    assert out.created
+    assert out.approval.quantity == 1
+    assert out.approval.estimated_value == pytest.approx(420.0)
+
+
+def test_buy_proposal_rejected_when_one_share_is_not_affordable():
+    repo, _ = _repo()
+    broker, _ = _broker(cash=300.0, price=420.0)
+    out = TradeProposalBuilder(broker, SignalMapper()).build(
+        repo=repo, requested_by_user_id="u1", ticker="MSFT", signal="BUY"
+    )
+    assert out.created is False
+    assert out.reason == "insufficient cash for 1 share"
+
+
 def test_hold_signal_creates_nothing():
     repo, _ = _repo()
     broker, _ = _broker()

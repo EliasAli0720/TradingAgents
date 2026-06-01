@@ -221,13 +221,28 @@ class WebullBroker(BrokerAdapter):
     ) -> Dict[str, Any]:
         if order_type == OrderType.LIMIT and limit_price is None:
             raise ValueError("limit_price is required for LIMIT orders")
+        symbol = ticker.upper()
+        tif = (time_in_force or "day").upper()
+        quantity = str(qty)
         payload: Dict[str, Any] = {
             "client_order_id": client_order_id or uuid4().hex,
-            "instrument_id": self._instrument_id(ticker),
+            "instrument_id": self._instrument_id(symbol),
+            "symbol": symbol,
+            "instrument_type": "EQUITY",
             "side": "BUY" if side == OrderSide.BUY else "SELL",
             "order_type": order_type.value.upper(),
-            "tif": (time_in_force or "day").upper(),
-            "qty": str(qty),
+            "tif": tif,
+            "time_in_force": tif,
+            "qty": quantity,
+            "quantity": quantity,
+            "entrust_type": "QTY",
+            "combo_type": "NORMAL",
+            "support_trading_session": "CORE",
+            # market: required — the SDK builds the request "category" header
+            # from it (``<market>_STOCK``); omitting it crashes place/preview.
+            "market": self._region.upper(),
+            # Market orders must be regular-hours only; allow it for limit orders.
+            "extended_hours_trading": False,
         }
         if limit_price is not None:
             payload["limit_price"] = str(limit_price)

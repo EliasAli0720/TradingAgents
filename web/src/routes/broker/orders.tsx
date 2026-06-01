@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { brokerApi } from '@/api/broker';
+import { getBrokerChannel } from '@/api/brokerChannel';
 import { useAuth } from '@/hooks/useAuth';
 import { Subheader, Caption, ErrorBox } from '@/components/ui/Page';
 import { getLocale, t } from '@/i18n';
@@ -31,6 +32,7 @@ const OPEN_STATUSES = new Set(['pending', 'partially_filled']);
 export default function BrokerOrdersPage() {
   const { canOperate } = useAuth();
   const qc = useQueryClient();
+  const isWebull = getBrokerChannel().kind === 'server';
 
   const orders = useQuery({
     queryKey: ['broker', 'orders'],
@@ -45,7 +47,7 @@ export default function BrokerOrdersPage() {
   return (
     <div>
       <Subheader>{t('broker.orders.title')}</Subheader>
-      <Caption>{t('broker.orders.caption')}</Caption>
+      <Caption>{t(isWebull ? 'broker.orders.caption_webull' : 'broker.orders.caption')}</Caption>
 
       {orders.isLoading ? (
         <div className="text-muted">{t('common.loading')}</div>

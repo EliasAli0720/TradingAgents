@@ -27,6 +27,19 @@ export function Warning({ children }: { children: React.ReactNode }) {
   );
 }
 
+// Inline loading spinner (no icon lib). `size` in px; inherits text color via
+// border-current so it matches the button/label it sits next to.
+export function Spinner({ size = 16, className = '' }: { size?: number; className?: string }) {
+  return (
+    <span
+      role="status"
+      aria-label="loading"
+      className={`inline-block animate-spin rounded-full border-2 border-current border-t-transparent align-[-2px] ${className}`}
+      style={{ width: size, height: size }}
+    />
+  );
+}
+
 export function ErrorBox({ children }: { children: React.ReactNode }) {
   return (
     <div className="card text-sm" style={{ borderLeft: '4px solid #F44336' }}>

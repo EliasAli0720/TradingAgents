@@ -59,6 +59,18 @@ def _seed_webull(s, *, expires_in=1800, refresh_token="r"):
     return repo
 
 
+def _seed_webull_api_key(s):
+    repo = BrokerCredentialRepository(s, "u1")
+    repo.upsert_api_key(
+        app_key="app-key",
+        app_secret="app-secret",
+        account_id="DUKEY",
+        region="us",
+    )
+    s.commit()
+    return repo
+
+
 # --------------------------------------------------------------------------- #
 # resolve_active_broker                                                        #
 # --------------------------------------------------------------------------- #
@@ -156,6 +168,22 @@ def test_build_user_broker_returns_webull_with_credential(Session):
         assert broker._account_id == "DU1"
 
 
+def test_build_user_broker_uses_user_api_key_without_oauth_refresh(Session):
+    with Session() as s:
+        _seed_webull_api_key(s)
+        oauth = FakeOAuth(fail=True)
+        broker = broker_provider.build_user_broker(
+            s, _user(), {"broker": "ibkr", "paper_trading": True}, FakeConnService(),
+            oauth_client=oauth,
+        )
+        assert isinstance(broker, WebullBroker)
+        assert broker._account_id == "DUKEY"
+        assert broker._client._auth_type == "api_key"
+        assert broker._client._app_key == "app-key"
+        assert broker._client._app_secret == "app-secret"
+        assert oauth.refresh_calls == 0
+
+
 # --------------------------------------------------------------------------- #
 # status_for                                                                  #
 # --------------------------------------------------------------------------- #
@@ -188,3 +216,12 @@ def test_status_for_reports_webull_connected(Session):
         assert out["broker"] == "webull"
         assert out["connected"] is True
         assert out["account_id"] == "DU1"
+
+
+def test_status_for_reports_api_key_credential_connected(Session):
+    with Session() as s:
+        _seed_webull_api_key(s)
+        out = broker_provider.status_for(s, _user(), {"paper_trading": True}, None, None)
+        assert out["broker"] == "webull"
+        assert out["connected"] is True
+        assert out["account_id"] == "DUKEY"

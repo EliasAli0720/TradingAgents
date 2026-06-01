@@ -171,7 +171,8 @@ start_api_stack() {
     tradingagents-api \
     "$VENV_PYTHON" -m uvicorn tradingagents.api.app:app \
       --host "$API_HOST" \
-      --port "$API_PORT"
+      --port "$API_PORT" \
+      --timeout-graceful-shutdown 10
   wait_for_api
 
   start_background_process \

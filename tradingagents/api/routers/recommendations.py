@@ -35,7 +35,7 @@ from tradingagents.llm_clients import create_llm_client
 router = APIRouter(prefix="/recommendations", tags=["recommendations"])
 
 
-def _item_response(item) -> RecommendationItemResponse:
+def _item_response(item, run_status: str | None = None) -> RecommendationItemResponse:
     return RecommendationItemResponse(
         item_id=item.item_id,
         ticker=item.ticker,
@@ -45,6 +45,7 @@ def _item_response(item) -> RecommendationItemResponse:
         risk=item.risk,
         status=item.status,
         run_id=item.run_id,
+        run_status=run_status,
         error=item.error,
     )
 
@@ -54,14 +55,16 @@ def _batch_response(
     user_id: str,
     batch,
 ) -> RecommendationBatchResponse:
+    items = repo.list_items(user_id, batch.batch_id)
+    # Reflect the linked runs' live status (and flip terminally failed ones so
+    # they stop showing as stuck / become retryable). Lazy reconciliation on
+    # read keeps the recommendation feature decoupled from the worker.
+    live = repo.reconcile_run_statuses(items)
     return RecommendationBatchResponse(
         batch_id=batch.batch_id,
         status=batch.status,
         created_at=batch.created_at,
-        items=[
-            _item_response(item)
-            for item in repo.list_items(user_id, batch.batch_id)
-        ],
+        items=[_item_response(item, live.get(item.item_id)) for item in items],
     )
 
 
@@ -123,14 +126,16 @@ def generate_recommendations(
 
     repo = RecommendationRepository(session)
     watchlist = repo.get_watchlist(user.user_id)
-    if watchlist is None or not watchlist.tickers:
-        raise HTTPException(status_code=409, detail="watchlist not configured")
+    # An empty watchlist is allowed: the model then recommends across the broad
+    # market (model_expansion) instead of being constrained to a pool.
+    tickers = list(watchlist.tickers) if watchlist and watchlist.tickers else []
 
     generator = build_recommendation_generator(settings)
     candidates = generator.generate(
-        watchlist=list(watchlist.tickers),
+        watchlist=tickers,
         recent_context=repo.recent_analysis_context(user.user_id),
         today=date.today(),
+        language=_request.language,
     )
     if not candidates:
         raise HTTPException(
@@ -146,7 +151,7 @@ def generate_recommendations(
     }
     batch = repo.create_batch(
         user_id=user.user_id,
-        watchlist_snapshot=list(watchlist.tickers),
+        watchlist_snapshot=tickers,
         model_snapshot=model_snapshot,
         items=[candidate.__dict__ for candidate in candidates[:5]],
         prompt_version=PROMPT_VERSION,
@@ -182,7 +187,9 @@ def get_batch(
     batch = repo.get_batch(user.user_id, batch_id)
     if batch is None:
         raise HTTPException(status_code=404, detail="recommendation batch not found")
-    return _batch_response(repo, user.user_id, batch)
+    response = _batch_response(repo, user.user_id, batch)
+    session.commit()  # persist any status reconciliation done while reading
+    return response
 
 
 @router.post("/batches/{batch_id}/analyze", response_model=AnalyzeRecommendationsResponse)
@@ -210,6 +217,9 @@ def analyze_recommendations(
         item.item_id: item
         for item in repo.get_items_by_ids(user.user_id, batch_id, request.item_ids)
     }
+    # Flip any item whose prior run already failed/cancelled to analysis_failed
+    # so it passes the retry gate below instead of looking "already analyzed".
+    repo.reconcile_run_statuses(list(items.values()))
     created: list[AnalyzeRecommendationCreatedResponse] = []
     failed: list[AnalyzeRecommendationFailedResponse] = []
 
@@ -223,7 +233,9 @@ def analyze_recommendations(
                 )
             )
             continue
-        if item.status != "recommended" or item.run_id:
+        # "recommended" = never analyzed; "analysis_failed" = a prior run failed
+        # and may be retried. Anything else (queued/running/ignored) is skipped.
+        if item.status not in ("recommended", "analysis_failed"):
             failed.append(
                 AnalyzeRecommendationFailedResponse(
                     item_id=item.item_id,

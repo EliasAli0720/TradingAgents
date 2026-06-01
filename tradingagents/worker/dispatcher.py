@@ -42,31 +42,32 @@ def dispatch_once(
                 if repo.count_active_runs(user_id=user_id) >= config.user_running:
                     continue
 
-                claim = session.begin_nested()
-                try:
-                    run = repo.claim_next_queued_for_dispatch(
-                        user_id=user_id,
-                        lease_expires_at=utcnow() + timedelta(seconds=config.lease_seconds),
-                    )
-                    if run is None:
-                        claim.rollback()
-                        continue
+                run = repo.claim_next_queued_for_dispatch(
+                    user_id=user_id,
+                    lease_expires_at=utcnow() + timedelta(seconds=config.lease_seconds),
+                )
+                if run is None:
+                    continue
 
-                    run_id = run.run_id
-                    task_id = enqueue(run_id)
-                    if not task_id:
-                        claim.rollback()
-                        session.expire_all()
-                        raise RuntimeError(f"enqueue did not return a task id for run {run_id}")
+                run_id = run.run_id
+                # Commit the "dispatching" status BEFORE enqueuing. Otherwise a
+                # fast worker can run start_dispatched_run before this row is
+                # visible, find status still "queued", no-op, and leave the run
+                # wedged in "dispatching" forever. Committing first closes that
+                # race; if the subsequent enqueue fails the sweeper requeues the
+                # run on lease expiry — the same recovery path as a lost task.
+                session.commit()
 
-                    repo.set_celery_task_id(run_id, task_id)
-                except Exception:
-                    if claim.is_active:
-                        claim.rollback()
-                        session.expire_all()
-                    raise
-                else:
-                    claim.commit()
+                task_id = enqueue(run_id)
+                if not task_id:
+                    # Enqueue failed: put the run straight back to queued (instead
+                    # of stranding it in dispatching until the lease expires) and
+                    # surface the error.
+                    repo.requeue_run(run_id, "enqueue returned no task id")
+                    session.commit()
+                    raise RuntimeError(f"enqueue did not return a task id for run {run_id}")
+                repo.set_celery_task_id(run_id, task_id)
+                session.commit()
 
                 dispatched += 1
                 made_progress = True

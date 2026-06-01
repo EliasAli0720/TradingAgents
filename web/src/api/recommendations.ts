@@ -1,8 +1,16 @@
 import { http } from './client';
+import { getLang } from '@/i18n';
 
 export type RecommendationSource = 'watchlist' | 'model_expansion';
 export type RecommendationItemStatus = 'recommended' | 'analysis_queued' | 'analysis_failed' | 'ignored';
 export type RecommendationBatchStatus = 'succeeded' | 'failed';
+export type RunStatus =
+  | 'queued'
+  | 'dispatching'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'cancelled';
 
 export type RecommendationItem = {
   item_id: string;
@@ -13,6 +21,7 @@ export type RecommendationItem = {
   risk: string;
   status: RecommendationItemStatus;
   run_id: string | null;
+  run_status: RunStatus | null;
   error: string | null;
 };
 
@@ -50,7 +59,10 @@ export const recommendationsApi = {
     return data;
   },
   async generate(): Promise<RecommendationBatch> {
-    const { data } = await http.post<RecommendationBatch>('/recommendations/generate', {});
+    // Pass the UI language so reason/risk come back in the user's language.
+    const { data } = await http.post<RecommendationBatch>('/recommendations/generate', {
+      language: getLang(),
+    });
     return data;
   },
   async batches(): Promise<RecommendationBatchSummary[]> {

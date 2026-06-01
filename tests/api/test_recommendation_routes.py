@@ -94,7 +94,7 @@ def test_watchlist_rejects_invalid_ticker():
 
 
 class FakeGenerator:
-    def generate(self, *, watchlist, recent_context, today):
+    def generate(self, *, watchlist, recent_context, today, language=None):
         assert watchlist == ["NVDA", "AAPL"]
         return [
             RecommendationCandidate(
@@ -125,15 +125,41 @@ def test_generate_requires_model_settings():
     assert response.json()["detail"] == "model settings not configured"
 
 
-def test_generate_requires_watchlist():
+class FakeFullMarketGenerator:
+    """Generator used when no watchlist is set — recommends across the market."""
+
+    def generate(self, *, watchlist, recent_context, today, language=None):
+        assert watchlist == []  # empty pool → full-market mode
+        return [
+            RecommendationCandidate(
+                ticker="NVDA",
+                source="model_expansion",
+                priority=1,
+                reason="Broad-market momentum",
+                risk="Valuation sensitivity",
+            ),
+        ]
+
+
+def test_generate_without_watchlist_uses_model_expansion(monkeypatch):
     client = _client()
     _login(client)
-    _put_model_settings(client)
+    _put_model_settings(client)  # model configured, but no watchlist saved
+
+    from tradingagents.api.routers import recommendations
+
+    monkeypatch.setattr(
+        recommendations,
+        "build_recommendation_generator",
+        lambda settings: FakeFullMarketGenerator(),
+    )
 
     response = client.post("/recommendations/generate", json={})
 
-    assert response.status_code == 409
-    assert response.json()["detail"] == "watchlist not configured"
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["ticker"] for item in body["items"]] == ["NVDA"]
+    assert body["items"][0]["source"] == "model_expansion"
 
 
 def test_generate_saves_batch_and_history(monkeypatch):
@@ -204,3 +230,50 @@ def test_analyze_selected_items_creates_default_stock_runs(monkeypatch):
     assert run["ticker"] == "NVDA"
     assert run["asset_type"] == "stock"
     assert run["analysts"] == ["market", "social", "news", "fundamentals"]
+
+
+def test_batch_reflects_run_status_and_allows_reanalysis(monkeypatch):
+    client = _client()
+    _login(client)
+    _put_model_settings(client)
+    client.put("/recommendations/watchlist", json={"tickers": ["NVDA", "AAPL"]})
+
+    from tradingagents.api.routers import recommendations
+
+    monkeypatch.setattr(
+        recommendations,
+        "build_recommendation_generator",
+        lambda settings: FakeGenerator(),
+    )
+    batch = client.post("/recommendations/generate", json={}).json()
+    batch_id = batch["batch_id"]
+    item_id = batch["items"][0]["item_id"]
+
+    first = client.post(
+        f"/recommendations/batches/{batch_id}/analyze",
+        json={"item_ids": [item_id]},
+    ).json()
+    first_run_id = first["created"][0]["run_id"]
+
+    # Simulate the run terminating without success (cancel == terminal state).
+    assert client.post(f"/runs/{first_run_id}/cancel").status_code == 200
+
+    # The batch now reflects the live run status and marks the item retryable.
+    refreshed = client.get(f"/recommendations/batches/{batch_id}").json()
+    item = refreshed["items"][0]
+    assert item["run_status"] == "cancelled"
+    assert item["status"] == "analysis_failed"
+
+    # Re-analyzing the failed item is allowed and starts a fresh run.
+    retry = client.post(
+        f"/recommendations/batches/{batch_id}/analyze",
+        json={"item_ids": [item_id]},
+    ).json()
+    assert retry["failed"] == []
+    assert retry["created"][0]["item_id"] == item_id
+    new_run_id = retry["created"][0]["run_id"]
+    assert new_run_id != first_run_id
+
+    after = client.get(f"/recommendations/batches/{batch_id}").json()["items"][0]
+    assert after["status"] == "analysis_queued"
+    assert after["run_id"] == new_run_id

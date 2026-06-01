@@ -132,6 +132,25 @@ def ensure_additive_schema(db_engine) -> None:
                     text("ALTER TABLE users ADD COLUMN language VARCHAR NOT NULL DEFAULT 'zh'")
                 )
 
+    if "broker_credentials" in table_names:
+        broker_columns = {
+            column["name"] for column in inspector.get_columns("broker_credentials")
+        }
+        broker_additions = {
+            "auth_type": "VARCHAR NOT NULL DEFAULT 'oauth'",
+            "app_key_enc": "TEXT",
+            "app_secret_enc": "TEXT",
+        }
+        with db_engine.begin() as connection:
+            for column_name, column_definition in broker_additions.items():
+                if column_name not in broker_columns:
+                    connection.execute(
+                        text(
+                            f"ALTER TABLE broker_credentials ADD COLUMN "
+                            f"{column_name} {column_definition}"
+                        )
+                    )
+
     if "user_model_settings" not in table_names:
         return
 

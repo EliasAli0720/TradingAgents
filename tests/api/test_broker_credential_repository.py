@@ -47,6 +47,28 @@ def test_upsert_then_get_round_trips_tokens(Session):
         assert cred.refresh_expires_at is not None
 
 
+def test_upsert_api_key_round_trips_encrypted_secrets(Session):
+    with Session() as s:
+        repo = BrokerCredentialRepository(s, "user-1")
+        repo.upsert_api_key(
+            app_key="app-key-123",
+            app_secret="app-secret-456",
+            account_id="DU200",
+            region="us",
+        )
+        s.commit()
+
+        cred = repo.require()
+        assert cred.auth_type == "api_key"
+        assert cred.account_id == "DU200"
+        assert cred.status == CONNECTED
+        assert cred.token_expires_at is None
+        assert repo.app_key(cred) == "app-key-123"
+        assert repo.app_secret(cred) == "app-secret-456"
+        assert cred.app_key_enc != "app-key-123"
+        assert cred.app_secret_enc != "app-secret-456"
+
+
 def test_upsert_is_idempotent_per_user_broker(Session):
     with Session() as s:
         repo = BrokerCredentialRepository(s, "user-1")

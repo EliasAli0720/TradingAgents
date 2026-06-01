@@ -77,6 +77,38 @@ def test_parse_recommendations_normalizes_filters_and_deduplicates_tickers():
     ]
 
 
+def test_parse_recommendations_is_lenient_about_bad_items():
+    # A wrong source, a missing field, and a non-dict item must NOT sink the
+    # whole batch (previously strict pydantic validation returned []).
+    raw = json.dumps(
+        {
+            "recommendations": [
+                {"ticker": "AAPL", "source": "market", "priority": 1,
+                 "reason": "r", "risk": "k"},          # unknown source → coerced
+                {"ticker": "MSFT", "priority": 0, "reason": "r"},  # missing risk, bad priority
+                "not-an-object",                                    # skipped
+                {"ticker": "NVDA", "source": "model_expansion", "priority": 3,
+                 "reason": "r", "risk": "k"},
+            ]
+        }
+    )
+
+    candidates = parse_recommendations(raw)
+
+    assert [c.ticker for c in candidates] == ["AAPL", "MSFT", "NVDA"]
+    assert candidates[0].source == "model_expansion"  # coerced from "market"
+    assert candidates[1].risk == ""                    # missing → empty, not dropped
+    assert candidates[1].priority >= 1                 # bad priority repaired
+
+
+def test_parse_recommendations_handles_code_fences_and_think_blocks():
+    raw = (
+        "<think>let me pick some names</think>\n"
+        "```json\n" + json.dumps({"recommendations": [_item("tsla")]}) + "\n```"
+    )
+    assert [c.ticker for c in parse_recommendations(raw)] == ["TSLA"]
+
+
 def test_parse_recommendations_extracts_json_object_from_model_text():
     raw = (
         "Here is the JSON:\n"
@@ -87,6 +119,34 @@ def test_parse_recommendations_extracts_json_object_from_model_text():
     candidates = parse_recommendations(raw)
 
     assert [candidate.ticker for candidate in candidates] == ["MSFT"]
+
+
+def test_generator_injects_language_instruction():
+    class FakeResponse:
+        content = json.dumps({"recommendations": [_item("aapl")]})
+
+    class FakeLLM:
+        def __init__(self):
+            self.messages = None
+
+        def invoke(self, messages):
+            self.messages = messages
+            return FakeResponse()
+
+    # Chinese → system prompt instructs the model to write reason/risk in Chinese.
+    llm = FakeLLM()
+    RecommendationGenerator(llm).generate(
+        watchlist=[], recent_context=[], today=date(2026, 5, 31), language="zh"
+    )
+    system = llm.messages[0][1]
+    assert "Chinese" in system
+
+    # Unknown / unset language → no language instruction (defaults to English).
+    llm2 = FakeLLM()
+    RecommendationGenerator(llm2).generate(
+        watchlist=[], recent_context=[], today=date(2026, 5, 31), language=None
+    )
+    assert "Chinese" not in llm2.messages[0][1]
 
 
 def test_recommendation_generator_builds_prompt_and_returns_candidates():

@@ -5,12 +5,31 @@
 //                    report the result back to the server (decision B).
 import { brokerApi, type TradeApproval } from './broker';
 import { getBrokerChannel } from './brokerChannel';
+import { brokerNotConnectedError, isUsableBrokerStatus, shouldUseServerProposal } from './brokerReadiness';
 
 export async function createProposal(runId: string, ticker: string): Promise<TradeApproval> {
   const channel = getBrokerChannel();
-  if (channel.kind === 'server' || !channel.quote) {
+  const serverStatus = await brokerApi.status();
+
+  // Webull is a per-user cloud broker exposed only through the server API.
+  // Desktop may still have a local IBKR sidecar, but an active Webull account
+  // must not fall through to local quote/snapshot collection.
+  if (shouldUseServerProposal(serverStatus)) {
     return brokerApi.createProposal(runId);
   }
+
+  if (channel.kind === 'server' || !channel.quote) {
+    if (!isUsableBrokerStatus(serverStatus)) {
+      throw brokerNotConnectedError();
+    }
+    return brokerApi.createProposal(runId);
+  }
+
+  const localStatus = await channel.status();
+  if (!isUsableBrokerStatus(localStatus)) {
+    throw brokerNotConnectedError();
+  }
+
   // Local: gather the live inputs the server needs to size + risk-check.
   const [account, positions, quote] = await Promise.all([
     channel.account(),
@@ -22,13 +41,24 @@ export async function createProposal(runId: string, ticker: string): Promise<Tra
 
 export async function approveProposal(a: TradeApproval): Promise<void> {
   const channel = getBrokerChannel();
+  const serverStatus = await brokerApi.status();
+  if (shouldUseServerProposal(serverStatus)) {
+    await brokerApi.approve(a.approval_id);
+    return;
+  }
   if (channel.kind === 'server' || !channel.execute) {
+    if (!isUsableBrokerStatus(serverStatus)) {
+      throw brokerNotConnectedError();
+    }
     await brokerApi.approve(a.approval_id);
     return;
   }
   // Local: place against the local TWS, then record the placement on the server
   // tagged with the connected account so analytics segment per (user, account).
   const status = await channel.status();
+  if (!isUsableBrokerStatus(status)) {
+    throw brokerNotConnectedError();
+  }
   const placed = await channel.execute({
     ticker: a.ticker,
     qty: a.quantity,

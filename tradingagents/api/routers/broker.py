@@ -71,6 +71,7 @@ class PositionResponse(BaseModel):
 
 class OrderResponse(BaseModel):
     broker_order_id: str
+    account_id: Optional[str] = None
     ticker: str
     side: str
     order_type: str
@@ -123,6 +124,15 @@ class PreviewResponse(BaseModel):
     commission: Optional[float] = None
     equity_with_loan: Optional[float] = None
     warning: Optional[str] = None
+
+
+class PlaceOrderRequest(BaseModel):
+    ticker: str
+    qty: int
+    side: Literal["buy", "sell"]
+    order_type: Literal["market", "limit"] = "market"
+    limit_price: Optional[float] = None
+    time_in_force: str = "day"
 
 
 class CreateProposalRequest(BaseModel):
@@ -325,6 +335,7 @@ def _approval_resp(a) -> ApprovalResponse:
 def _order_resp(o) -> OrderResponse:
     return OrderResponse(
         broker_order_id=o.broker_order_id,
+        account_id=o.account_id,
         ticker=o.ticker,
         side=o.side,
         order_type=o.order_type,
@@ -409,15 +420,70 @@ def preview_order(
     _user: User = Depends(require_role(*_TRADER_ROLES)),
     broker=Depends(get_broker),
 ):
-    out = broker.preview_order(
-        body.ticker,
-        body.qty,
-        OrderSide(body.side),
-        OrderType(body.order_type),
-        body.limit_price,
-        body.time_in_force,
-    )
+    try:
+        out = broker.preview_order(
+            body.ticker,
+            body.qty,
+            OrderSide(body.side),
+            OrderType(body.order_type),
+            body.limit_price,
+            body.time_in_force,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     return PreviewResponse(**out)
+
+
+@router.post("/orders", response_model=OrderResponse, status_code=201)
+def place_order(
+    body: PlaceOrderRequest,
+    session: Session = Depends(get_db_session),
+    user: User = Depends(require_role(*_TRADER_ROLES)),
+    repo: BrokerRepository = Depends(get_broker_repo),
+    broker=Depends(get_broker),
+):
+    try:
+        order = broker.submit_order(
+            body.ticker,
+            body.qty,
+            OrderSide(body.side),
+            OrderType(body.order_type),
+            body.limit_price,
+            body.time_in_force,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    account_id = getattr(broker, "_account_id", None)
+    try:
+        health = {} if account_id else broker.health()
+        account_id = account_id or health.get("account_id")
+        if not account_id:
+            accounts = health.get("accounts") or []
+            account_id = accounts[0] if accounts else None
+    except Exception:  # noqa: BLE001 - account id is metadata; order already placed
+        pass
+
+    mirrored = repo.upsert_order(
+        broker_order_id=order.order_id,
+        ticker=order.ticker,
+        side=order.side.value,
+        order_type=order.order_type.value,
+        quantity=order.qty,
+        status=order.status.value,
+        approval_id=None,
+        requested_by_user_id=user.user_id,
+        account_id=account_id,
+        limit_price=order.limit_price,
+        filled_qty=order.filled_qty,
+        filled_avg_price=order.filled_avg_price,
+    )
+    session.commit()
+    return _order_resp(mirrored)
 
 
 @router.post("/orders/{order_id}/cancel", response_model=CancelResponse)
@@ -777,7 +843,9 @@ def get_trades(
 
 @router.post("/refresh", response_model=BrokerStatusResponse)
 def refresh_status(
-    _user: User = Depends(require_role(*_TRADER_ROLES)),
+    user: User = Depends(require_role(*_TRADER_ROLES)),
+    session: Session = Depends(get_db_session),
+    config: dict = Depends(get_config),
     broker=Depends(get_broker),
     svc: BrokerConnectionService = Depends(get_connection_service),
     repo: BrokerRepository = Depends(get_broker_repo),
@@ -786,4 +854,6 @@ def refresh_status(
         broker.health()  # proxies to the connector; keeps the session warm
     except Exception:  # noqa: BLE001 - status still reflects the DB mirror
         pass
-    return BrokerStatusResponse(**svc.status(repo))
+    from tradingagents.api.broker_provider import status_for
+
+    return BrokerStatusResponse(**status_for(session, user, config, svc, repo))

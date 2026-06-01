@@ -203,6 +203,17 @@ def test_submit_order_builds_payload_and_maps():
     assert payload["order_type"] == "MARKET"
     assert payload["tif"] == "DAY"
     assert payload["client_order_id"]  # auto-generated idempotency key
+    # market is required by the SDK (builds the "<market>_STOCK" category header);
+    # extended_hours_trading must be present (false for market orders).
+    assert payload["market"] == "US"
+    assert payload["extended_hours_trading"] is False
+    assert payload["combo_type"] == "NORMAL"
+    assert payload["symbol"] == "AAPL"
+    assert payload["instrument_type"] == "EQUITY"
+    assert payload["quantity"] == "10"
+    assert payload["entrust_type"] == "QTY"
+    assert payload["time_in_force"] == "DAY"
+    assert payload["support_trading_session"] == "CORE"
     assert order.status == OrderStatus.FILLED
     assert order.filled_avg_price == 105.0
     assert order.ticker == "AAPL"
@@ -290,6 +301,21 @@ def test_preview_order_normalises_shape():
     assert out["buying_power"] == 19000.0
     assert out["warning"] == "ok"
     assert "init_margin" in out
+
+
+def test_preview_order_builds_webull_required_stock_fields():
+    client = FakeWebullClient()
+    broker = WebullBroker(client, account_id="DU999")
+    broker.preview_order("AAPL", 1, OrderSide.BUY)
+
+    payload = [c for c in client.calls if c[0] == "preview_order"][0][2]
+    assert payload["combo_type"] == "NORMAL"
+    assert payload["symbol"] == "AAPL"
+    assert payload["instrument_type"] == "EQUITY"
+    assert payload["quantity"] == "1"
+    assert payload["entrust_type"] == "QTY"
+    assert payload["time_in_force"] == "DAY"
+    assert payload["support_trading_session"] == "CORE"
 
 
 def test_get_latest_price_prefers_last():

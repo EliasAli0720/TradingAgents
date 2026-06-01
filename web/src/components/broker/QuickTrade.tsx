@@ -1,6 +1,9 @@
 import { useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { brokerApi, type PreviewResult } from '@/api/broker';
+import { isDesktop } from '@/api/brokerChannel';
+import { brokerNotConnectedError } from '@/api/brokerReadiness';
+import { manualTradeRoute } from '@/api/manualTradeFlow';
 import { useBrokerConnection } from '@/hooks/useBrokerConnection';
 import { useAuth } from '@/hooks/useAuth';
 import { getLocale, t } from '@/i18n';
@@ -12,12 +15,21 @@ function money(n: number | null | undefined): string {
   return n == null ? '—' : n.toLocaleString(getLocale(), { maximumFractionDigits: 2 });
 }
 
-// Manual quick order: preview (whatIf) + place against the connected local TWS
-// via the sidecar, then mirror the order to the server (per user + account).
+// Manual quick order. Webull places through the server broker; desktop IBKR
+// places through the local sidecar, then mirrors the order to the server.
 export default function QuickTrade() {
-  const { channel, status, tradingEnabled } = useBrokerConnection();
+  const { channel, status } = useBrokerConnection();
   const { canOperate } = useAuth();
   const qc = useQueryClient();
+  const desktop = isDesktop();
+
+  const serverStatus = useQuery({
+    queryKey: ['broker', 'status', 'server'],
+    queryFn: () => brokerApi.status(),
+    enabled: desktop,
+    refetchInterval: 30000,
+    retry: 1,
+  });
 
   const [ticker, setTicker] = useState('');
   const [side, setSide] = useState<Side>('buy');
@@ -26,8 +38,17 @@ export default function QuickTrade() {
   const [limitPrice, setLimitPrice] = useState<number | ''>('');
   const [preview, setPreview] = useState<PreviewResult | null>(null);
 
-  const accountId = status?.account_id ?? '';
-  const canExecute = typeof channel.execute === 'function';
+  const activeServerStatus = desktop ? serverStatus.data : status;
+  const route = manualTradeRoute({
+    desktop,
+    serverStatus: activeServerStatus,
+    serverStatusLoading: desktop && serverStatus.isLoading,
+    localStatus: desktop ? status : null,
+    localCanExecute: typeof channel.execute === 'function',
+  });
+  const accountId = route === 'server' ? (activeServerStatus?.account_id ?? '') : (status?.account_id ?? '');
+  const canPreview = route === 'server' || (route === 'local' && typeof channel.preview === 'function');
+  const canExecute = route === 'server' || (route === 'local' && typeof channel.execute === 'function');
   const valid =
     ticker.trim().length > 0 &&
     qty > 0 &&
@@ -43,12 +64,25 @@ export default function QuickTrade() {
   });
 
   const previewMut = useMutation({
-    mutationFn: () => channel.preview!(req()),
+    mutationFn: () => {
+      if (route === 'server') return brokerApi.previewOrder(req());
+      if (route === 'local' && channel.preview) return channel.preview(req());
+      throw brokerNotConnectedError();
+    },
     onSuccess: (r) => setPreview(r),
   });
 
   const placeMut = useMutation({
     mutationFn: async () => {
+      if (route === 'server') {
+        return brokerApi.placeOrder(req());
+      }
+      if (route !== 'local' || !channel.execute) {
+        throw brokerNotConnectedError();
+      }
+      if (!accountId) {
+        throw brokerNotConnectedError();
+      }
       const placed = await channel.execute!(req());
       await brokerApi.recordManualOrder({
         broker_order_id: placed.broker_order_id,
@@ -80,11 +114,11 @@ export default function QuickTrade() {
     if (ok) placeMut.mutate();
   };
 
-  const disabledReason = !canExecute
-    ? t('qt.desktop_only')
+  const disabledReason = desktop && serverStatus.isLoading
+    ? t('common.loading')
     : !canOperate
       ? t('qt.need_operator')
-      : !tradingEnabled
+      : !canExecute
         ? t('qt.connect_first')
         : null;
 
@@ -143,7 +177,7 @@ export default function QuickTrade() {
         <div className="flex gap-2">
           <button
             className="btn-ghost btn-block"
-            disabled={!!disabledReason || !valid || previewMut.isPending}
+            disabled={!!disabledReason || !valid || !canPreview || previewMut.isPending}
             onClick={() => previewMut.mutate()}
           >
             {previewMut.isPending ? t('qt.previewing') : t('qt.preview')}

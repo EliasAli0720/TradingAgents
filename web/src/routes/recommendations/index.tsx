@@ -6,7 +6,9 @@ import {
   recommendationsApi,
   type RecommendationBatch,
   type RecommendationBatchSummary,
+  type RecommendationItem,
   type RecommendationItemStatus,
+  type RunStatus,
 } from '@/api/recommendations';
 import type { ApiError } from '@/api/client';
 import { Subheader, Caption, ErrorBox } from '@/components/ui/Page';
@@ -18,6 +20,28 @@ const STATUS_CLS: Record<RecommendationItemStatus, string> = {
   analysis_failed: 'bg-dangerBg text-danger',
   ignored: 'bg-neutralBg text-muted',
 };
+
+const RUN_STATUS_CLS: Record<RunStatus, string> = {
+  queued: 'bg-warnBg text-warn',
+  dispatching: 'bg-warnBg text-warn',
+  running: 'bg-infoBg text-info',
+  succeeded: 'bg-successBg text-success',
+  failed: 'bg-dangerBg text-danger',
+  cancelled: 'bg-neutralBg text-muted',
+};
+
+const LIVE_RUN_STATUSES: ReadonlySet<RunStatus> = new Set([
+  'queued',
+  'dispatching',
+  'running',
+]);
+
+// An item is "settled" once it has no in-flight run: never analyzed, or its run
+// reached a terminal state. Such items are selectable (analyze / re-analyze).
+function isSelectable(item: RecommendationItem): boolean {
+  if (item.status === 'recommended' || item.status === 'analysis_failed') return true;
+  return item.run_status != null && !LIVE_RUN_STATUSES.has(item.run_status);
+}
 
 function splitTickers(value: string): string[] {
   return value
@@ -53,6 +77,15 @@ export default function RecommendationsPage() {
     queryKey: ['recommendations', 'batch', activeBatchId],
     queryFn: () => recommendationsApi.batch(activeBatchId!),
     enabled: !!activeBatchId,
+    // Poll while any item still has an in-flight run so the page reflects
+    // queued → running → succeeded/failed instead of staying stuck.
+    refetchInterval: (query) => {
+      const items = query.state.data?.items ?? [];
+      const anyLive = items.some(
+        (item) => item.run_status != null && LIVE_RUN_STATUSES.has(item.run_status),
+      );
+      return anyLive ? 4000 : false;
+    },
   });
 
   useEffect(() => {
@@ -165,11 +198,20 @@ export default function RecommendationsPage() {
 
       {actionError && (
         <ErrorBox>
-          <span>{actionError.status} · {actionError.detail}</span>
-          {actionError.status === 409 && (
-            <Link to="/settings/model" className="text-[#ff4b4b] ml-2">
-              {t('analysis.configure_model')}
-            </Link>
+          {/* A 409 can mean either "no model" or "no watchlist" — show the
+              message (and the model link) that actually matches the cause,
+              instead of always pointing at model settings. */}
+          {actionError.status === 409 && /model/i.test(actionError.detail ?? '') ? (
+            <span>
+              {t('recommendations.err_model_required')}
+              <Link to="/settings/model" className="text-[#ff4b4b] ml-2">
+                {t('analysis.configure_model')}
+              </Link>
+            </span>
+          ) : actionError.status === 409 && /watchlist/i.test(actionError.detail ?? '') ? (
+            <span>{t('recommendations.err_watchlist_required')}</span>
+          ) : (
+            <span>{actionError.status} · {actionError.detail}</span>
           )}
         </ErrorBox>
       )}
@@ -265,7 +307,7 @@ function CurrentBatch({
               <td>
                 <input
                   type="checkbox"
-                  disabled={item.status !== 'recommended'}
+                  disabled={!isSelectable(item)}
                   checked={Boolean(selected[item.item_id])}
                   onChange={(e) => setSelected((s) => ({ ...s, [item.item_id]: e.target.checked }))}
                 />
@@ -278,9 +320,17 @@ function CurrentBatch({
               <td className="min-w-64">{item.reason}</td>
               <td className="min-w-56">{item.risk}</td>
               <td>
-                <span className={`badge ${STATUS_CLS[item.status]}`}>
-                  {item.status}
-                </span>
+                {/* Prefer the live run status once a run exists; fall back to
+                    the item's own lifecycle status otherwise. Both are localized. */}
+                {item.run_status ? (
+                  <span className={`badge ${RUN_STATUS_CLS[item.run_status]}`}>
+                    {t(`recommendations.run_status.${item.run_status}`)}
+                  </span>
+                ) : (
+                  <span className={`badge ${STATUS_CLS[item.status]}`}>
+                    {t(`recommendations.item_status.${item.status}`)}
+                  </span>
+                )}
                 {item.error && <div className="text-xs text-danger mt-1">{item.error}</div>}
               </td>
               <td>

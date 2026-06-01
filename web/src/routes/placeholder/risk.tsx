@@ -63,7 +63,7 @@ export default function RiskPage() {
       <Caption>{t('risk.caption')}</Caption>
 
       {!connected ? (
-        <div className="mt-3"><Info>{t('broker.status.not_connected_hint')}</Info></div>
+        <div className="mt-3"><Info>{t('broker.not_connected_generic')}</Info></div>
       ) : (
         <>
           <KpiRow>

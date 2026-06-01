@@ -85,16 +85,23 @@ def build_broker(config: Mapping[str, Any], *, mode: str = "local") -> BrokerAda
 
         region = str(config.get("webull_region", "us"))
         paper = config.get("paper_trading", True)
+        auth_type = str(
+            config.get("webull_auth_type")
+            or ("oauth" if config.get("webull_access_token") else "api_key")
+        )
         client = config.get("webull_client")  # injected in tests / by provider
         if client is None:
             client = SdkWebullClient(
                 access_token=config.get("webull_access_token", ""),
                 app_key=config.get("webull_app_key", ""),
                 app_secret=config.get("webull_app_secret", ""),
+                auth_type=auth_type,
                 region=region,
                 paper=paper,
                 endpoint=config.get("webull_endpoint") or None,
                 token_provider=config.get("webull_token_provider"),
+                connect_timeout=float(config.get("webull_connect_timeout", 10) or 10),
+                read_timeout=float(config.get("webull_read_timeout", 30) or 30),
             )
         return WebullBroker(
             client,

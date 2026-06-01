@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getBrokerChannel } from '@/api/brokerChannel';
+import { brokerApi } from '@/api/broker';
+import { getBrokerChannel, isDesktop } from '@/api/brokerChannel';
+import { shouldUseServerProposal } from '@/api/brokerReadiness';
 import { useAuth } from '@/hooks/useAuth';
 import { Subheader, Caption, Info, ErrorBox } from '@/components/ui/Page';
 import Metric, { KpiRow } from '@/components/ui/Metric';
@@ -35,19 +37,32 @@ export default function BrokerStatusPage() {
   const { canOperate } = useAuth();
   const qc = useQueryClient();
   const channel = getBrokerChannel();
+  const desktop = isDesktop();
 
-  const status = useQuery({
-    queryKey: ['broker', 'status'],
+  const serverStatus = useQuery({
+    queryKey: ['broker', 'status', 'server'],
+    queryFn: () => brokerApi.status(),
+    enabled: channel.kind === 'server' || desktop,
+    // Webull (server) link state rarely changes; IBKR (local) needs liveness.
+    // (Shared query key → effective interval is the min across observers, so
+    // this must match the hook to actually back off on the server channel.)
+    refetchInterval: 30000,
+  });
+  const activeServerBroker = channel.kind === 'server' || shouldUseServerProposal(serverStatus.data);
+  const localStatus = useQuery({
+    queryKey: ['broker', 'status', 'local'],
     queryFn: () => channel.status(),
+    enabled: channel.kind === 'local' && !activeServerBroker,
     refetchInterval: 15000,
   });
+  const status = activeServerBroker ? serverStatus : localStatus;
   const account = useQuery({
-    queryKey: ['broker', 'account'],
-    queryFn: () => channel.account(),
+    queryKey: ['broker', 'account', activeServerBroker ? 'server' : 'local'],
+    queryFn: () => (activeServerBroker ? brokerApi.account() : channel.account()),
     enabled: !!status.data?.connected,
   });
   const refresh = useMutation({
-    mutationFn: () => channel.refresh(),
+    mutationFn: () => (activeServerBroker ? brokerApi.refresh() : channel.refresh()),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['broker', 'status'] });
       qc.invalidateQueries({ queryKey: ['broker', 'account'] });
@@ -59,13 +74,15 @@ export default function BrokerStatusPage() {
   });
 
   const s = status.data;
+  const isWebull = activeServerBroker && s?.broker === 'webull';
+  const showWebullCard = activeServerBroker || desktop;
 
   return (
     <div>
       <Subheader>{t('broker.status.title')}</Subheader>
-      <Caption>{t('broker.status.caption')}</Caption>
+      <Caption>{t(isWebull ? 'broker.status.caption_webull' : 'broker.status.caption')}</Caption>
 
-      {channel.kind === 'server' && (
+      {showWebullCard && (
         <div className="mb-4">
           <WebullConnectCard />
         </div>
@@ -87,8 +104,10 @@ export default function BrokerStatusPage() {
                 </span>
               }
             />
-            <Row label={t('broker.field.gateway')} value={<Bool v={s.gateway_online} />} />
-            <Row label={t('broker.field.session')} value={<Bool v={s.brokerage_session} />} />
+            {/* Gateway / session are IBKR (local TWS) concepts; Webull is a
+                stateless cloud REST broker with no gateway or session. */}
+            {!isWebull && <Row label={t('broker.field.gateway')} value={<Bool v={s.gateway_online} />} />}
+            {!isWebull && <Row label={t('broker.field.session')} value={<Bool v={s.brokerage_session} />} />}
             <Row label={t('broker.field.account')} value={s.account_id ?? '—'} />
             <Row
               label={t('broker.field.mode')}
@@ -100,14 +119,16 @@ export default function BrokerStatusPage() {
             )}
           </div>
 
-          {!s.connected && <Info>{t('broker.status.not_connected_hint')}</Info>}
+          {/* Webull: the connect card above already prompts to link; only the
+              IBKR (local) channel needs the connector/TWS hint here. */}
+          {!s.connected && !isWebull && <Info>{t('broker.status.not_connected_hint')}</Info>}
 
           {canOperate && (
             <button className="btn-ghost mt-3" disabled={refresh.isPending} onClick={() => refresh.mutate()}>
               {t('broker.action.refresh')}
             </button>
           )}
-          {channel.supportsConnect && canOperate && (
+          {!activeServerBroker && channel.supportsConnect && canOperate && (
             <button
               className="btn-ghost mt-3 ml-2"
               disabled={disconnect.isPending}

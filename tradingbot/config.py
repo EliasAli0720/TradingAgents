@@ -59,6 +59,10 @@ TRADINGBOT_CONFIG = {
     "webull_region": os.getenv("WEBULL_REGION", "us"),
     # Optional explicit OAuth endpoint override (else derived from region+paper).
     "webull_endpoint": os.getenv("WEBULL_ENDPOINT", ""),
+    # HTTP timeouts (seconds) for Webull API calls. Raise these when reaching the
+    # US API across borders / through a proxy, where the SDK defaults time out.
+    "webull_connect_timeout": float(os.getenv("WEBULL_CONNECT_TIMEOUT", "10") or 10),
+    "webull_read_timeout": float(os.getenv("WEBULL_READ_TIMEOUT", "30") or 30),
     # Connect API OAuth app (issued by Webull on registration). Used by the
     # server-side OAuth flow; the per-user tokens it mints are stored encrypted.
     "webull_client_id": os.getenv("WEBULL_CLIENT_ID", ""),

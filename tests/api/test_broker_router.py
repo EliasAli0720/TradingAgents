@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
 
 from tradingagents.api import deps
+from tradingagents.api.broker_credential_repository import BrokerCredentialRepository
 from tradingagents.api.app import create_app
 from tradingagents.api.db import Base, create_db_engine
 from tradingagents.api.deps import get_db_session
@@ -70,9 +71,9 @@ def _register_login(client: TestClient, username: str, password: str) -> None:
     client.headers.update({"X-CSRF-Token": client.cookies.get("tradingagents_csrf")})
 
 
-def _admin_client():
+def _admin_client(*, raise_server_exceptions: bool = True):
     app, Session = _make_app()
-    client = TestClient(app)
+    client = TestClient(app, raise_server_exceptions=raise_server_exceptions)
     _register_login(client, "alice", "hunter22a")  # first user -> admin
     return client, Session, app
 
@@ -140,6 +141,23 @@ def test_status_not_connected_when_no_mirror_row():
     assert body["last_error"] == "connector not running"
 
 
+def test_refresh_status_reports_active_webull_credential():
+    client, Session, _ = _admin_client()
+    with Session() as s:
+        user_id = s.query(broker_router.User).filter_by(username="alice").one().user_id
+        BrokerCredentialRepository(s, user_id).upsert_api_key(
+            app_key="key",
+            app_secret="secret",
+            account_id="DUWEBULL",
+        )
+        s.commit()
+
+    body = client.post("/broker/refresh").json()
+    assert body["broker"] == "webull"
+    assert body["connected"] is True
+    assert body["account_id"] == "DUWEBULL"
+
+
 def test_account_and_positions_from_broker():
     client, _, _ = _admin_client()
     acct = client.get("/broker/account").json()
@@ -156,6 +174,73 @@ def test_preview_order_ok_for_admin():
     )
     assert resp.status_code == 200
     assert resp.json()["init_margin"] == 5000.0
+
+
+def test_preview_order_validation_error_returns_422():
+    client, _, app = _admin_client(raise_server_exceptions=False)
+
+    class BadPreviewBroker:
+        def preview_order(self, *args, **kwargs):
+            raise ValueError("limit_price is required for LIMIT orders")
+
+    app.dependency_overrides[broker_router.get_broker] = lambda: BadPreviewBroker()
+
+    resp = client.post(
+        "/broker/orders/preview",
+        json={"ticker": "AAPL", "qty": 10, "side": "buy", "order_type": "limit"},
+    )
+
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "limit_price is required for LIMIT orders"
+
+
+def test_preview_order_broker_failure_returns_502():
+    client, _, app = _admin_client(raise_server_exceptions=False)
+
+    class FailingPreviewBroker:
+        def preview_order(self, *args, **kwargs):
+            raise RuntimeError("Parameter error, invalid combo_type")
+
+    app.dependency_overrides[broker_router.get_broker] = lambda: FailingPreviewBroker()
+
+    resp = client.post(
+        "/broker/orders/preview",
+        json={"ticker": "AAPL", "qty": 1, "side": "buy", "order_type": "market"},
+    )
+
+    assert resp.status_code == 502
+    assert resp.json()["detail"] == "Parameter error, invalid combo_type"
+
+
+def test_place_manual_server_order_mirrors_order():
+    client, _, _ = _admin_client()
+    resp = client.post(
+        "/broker/orders",
+        json={"ticker": "MSFT", "qty": 2, "side": "buy", "order_type": "market"},
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["broker_order_id"] == "O1"
+    assert body["ticker"] == "MSFT"
+    assert body["side"] == "buy"
+    assert body["quantity"] == 2
+    assert body["status"] == "pending"
+    assert body["approval_id"] is None
+    assert body["account_id"] == "DU1"
+
+    orders = client.get("/broker/orders").json()
+    assert any(o["broker_order_id"] == "O1" and o["ticker"] == "MSFT" for o in orders)
+
+
+def test_viewer_cannot_place_manual_server_order():
+    client, _, app = _admin_client()
+    bob = TestClient(app)
+    _register_login(bob, "bob", "hunter22b")
+    resp = bob.post(
+        "/broker/orders",
+        json={"ticker": "MSFT", "qty": 1, "side": "buy", "order_type": "market"},
+    )
+    assert resp.status_code == 403
 
 
 # --------------------------------------------------------------------------- #

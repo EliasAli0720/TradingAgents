@@ -6,14 +6,15 @@
 
 ## P0 / P1
 
-### 0. Webull 接入 — W3 交易链路（阻塞中：等 Webull UAT 凭证）
+### 0. Webull 接入 — W3 交易链路
 
 > 设计：`docs/superpowers/specs/2026-05-31-webull-server-broker-design.md`
-> 决策：服务端云经纪 + Connect API 多租户（每用户 OAuth token 加密落库）。
-> 已完成 W1（适配器+只读）/ W2（凭证表+OAuth+per-user provider）/ W4（前端连接卡片）；全套 623 测试绿、前端 build 绿。
-> **W3 唯一阻塞 = 没有 Webull UAT 凭证。** 拿到后按下面顺序做（SDK/OAuth 的真实字段都已隔离在单一文件，只改那里）：
+> 决策：短期支持 Trading API direct mode（用户自带 `app_key/app_secret`，加密落库）；长期仍保留 Connect API 多租户 OAuth（每用户 OAuth token 加密落库）。
+> 已完成 W1（适配器+只读）/ W2（凭证表+OAuth+per-user provider）/ W4（前端连接卡片）以及 API-key direct mode 的后端/前端入口。
+> **W3 当前阻塞 = 需要用真实 Webull 凭证跑只读 smoke，校准返回字段。** SDK/OAuth 的真实字段都已隔离在 `tradingbot/broker/webull_client.py` / `webull_oauth.py`。
 
-- [ ] **阶段 0 — 申请凭证**：邮件 `connect.api@webull-us.com`（公司名 + redirect_uri）申请 Connect App，或先用 UAT 共享测试账户。拿到 `client_id / client_secret / scope / app_key / app_secret`，填入环境变量 `WEBULL_CLIENT_ID / WEBULL_CLIENT_SECRET / WEBULL_REDIRECT_URI / WEBULL_APP_KEY / WEBULL_APP_SECRET`（见 `tradingbot/config.py` 的 `webull_*`）。`pip install ".[webull]"` 装 SDK。
+- [ ] **阶段 0 — direct mode 凭证**：已拿到 Trading API `app_key / app_secret` 时，填入 `.env` 的 `WEBULL_APP_KEY / WEBULL_APP_SECRET`，运行 `./scripts/webull_trading_smoke.py --skip-account` 做只读账户列表校验；也可以在 broker 页逐用户录入 API key。SDK 使用 `webull-openapi-python-sdk>=2.0.9,<3`。
+- [ ] **阶段 0b — Connect OAuth 凭证**：邮件 `connect.api@webull-us.com`（公司名 + redirect_uri）申请 Connect App。拿到 `client_id / client_secret / scope / app_key / app_secret` 后填入环境变量 `WEBULL_CLIENT_ID / WEBULL_CLIENT_SECRET / WEBULL_REDIRECT_URI / WEBULL_APP_KEY / WEBULL_APP_SECRET`（见 `tradingbot/config.py` 的 `webull_*`）。
 - [ ] **核对 OAuth 端点**：对照 Connect API authentication 文档，校准 `tradingbot/broker/webull_oauth.py` 的 `_AUTHORIZE_PATH / _TOKEN_PATH / scope / base URL`（现为推断值，已隔离常量）。先确认 token 端点是否真返回 `refresh_token`（有二手文档称早期未实装；无则 access_token 过期即需重新授权，代码已兜底）。
 - [ ] **核对 SDK 字段**：用真凭证连 UAT，校准 `tradingbot/broker/webull_client.py` 里 `SdkWebullClient` 的方法名/字段（account_balance / positions / resolve_instrument / get_quote / preview_order / place_order / cancel_order / get_order / list_orders / get_account_list）和 token 注入方式（`set_access_token` vs header）。**这是唯一碰真 SDK 的文件**，字段映射已归一，只改这里。
 - [ ] **下单字段**：`place_order` 的 `client_order_id / instrument_id / side / tif / order_type / limit_price / qty` 对齐；确认 symbol→instrument_id 解析端点 + 加客户端限流（account 2/2s、place 600/60s、preview 150/10s、instrument 10/30s）。

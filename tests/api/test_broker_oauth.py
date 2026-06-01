@@ -55,10 +55,28 @@ def _make_app():
             yield session
 
     fake_oauth = FakeOAuthClient()
+    resolver_calls = []
+
+    def fake_api_key_account_resolver(app_key, app_secret, region, paper, endpoint):
+        resolver_calls.append(
+            {
+                "app_key": app_key,
+                "app_secret": app_secret,
+                "region": region,
+                "paper": paper,
+                "endpoint": endpoint,
+            }
+        )
+        return ["DU777"]
+
     app = create_app()
     app.dependency_overrides[get_db_session] = override_session
     app.dependency_overrides[deps.get_redis_client] = lambda: None
     app.dependency_overrides[broker_oauth.get_oauth_client] = lambda: fake_oauth
+    app.dependency_overrides[broker_oauth.get_api_key_account_resolver] = (
+        lambda: fake_api_key_account_resolver
+    )
+    app.state.webull_api_key_resolver_calls = resolver_calls
     return app, Session, fake_oauth
 
 
@@ -97,6 +115,55 @@ def test_status_not_connected_initially():
     body = client.get("/broker/oauth/webull/status").json()
     assert body["connected"] is False
     assert body["status"] == "not_connected"
+
+
+def test_api_key_connect_validates_and_stores_credential():
+    client, Session, _ = _client()
+    resp = client.post(
+        "/broker/oauth/webull/api-key",
+        json={"app_key": "key-1", "app_secret": "secret-1"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["connected"] is True
+    assert body["status"] == "connected"
+    assert body["auth_type"] == "api_key"
+    assert body["account_id"] == "DU777"
+
+    calls = client.app.state.webull_api_key_resolver_calls
+    assert calls == [
+        {
+            "app_key": "key-1",
+            "app_secret": "secret-1",
+            "region": "us",
+            "paper": True,
+            "endpoint": "",
+        }
+    ]
+    with Session() as s:
+        from tradingagents.api.models import User
+
+        user_id = s.query(User).filter_by(username="alice").one().user_id
+        cred = BrokerCredentialRepository(s, user_id).require()
+        assert cred.auth_type == "api_key"
+        assert BrokerCredentialRepository(s, user_id).app_key(cred) == "key-1"
+        assert BrokerCredentialRepository(s, user_id).app_secret(cred) == "secret-1"
+
+
+def test_api_key_connect_requires_account_when_multiple_accounts_found():
+    client, _, _ = _client()
+
+    def resolver(*_args):
+        return ["DU1", "DU2"]
+
+    client.app.dependency_overrides[broker_oauth.get_api_key_account_resolver] = (
+        lambda: resolver
+    )
+    resp = client.post(
+        "/broker/oauth/webull/api-key",
+        json={"app_key": "key-1", "app_secret": "secret-1"},
+    )
+    assert resp.status_code == 409
 
 
 # --------------------------------------------------------------------------- #
