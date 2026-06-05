@@ -34,28 +34,27 @@ export default function LoginPage() {
   const error = m.error as unknown as ApiError | undefined;
 
   return (
-    <div className="h-full flex items-center justify-center bg-[radial-gradient(circle_at_top,rgba(221,170,83,0.18),transparent_36%),linear-gradient(135deg,#0C3D2F_0%,#051A10_70%)] p-6">
-      <div className="card w-full max-w-sm">
-        <div className="mb-6 flex flex-col items-center rounded-lg border border-brandGold/30 bg-[linear-gradient(145deg,#F7F4EA_0%,#EEF0E7_58%,#C6CDBF_100%)] px-6 py-7 text-center shadow-lg shadow-black/15">
+    <div className="h-full overflow-y-auto overflow-x-hidden flex items-center justify-center bg-[radial-gradient(circle_at_top,rgba(221,170,83,0.18),transparent_36%),linear-gradient(135deg,#0C3D2F_0%,#051A10_70%)] p-4 sm:p-6">
+      <div className="card w-full max-w-sm my-auto">
+        <div className="mb-5 grid justify-items-center gap-3 rounded-lg border border-brandGold/30 bg-[linear-gradient(145deg,#F7F4EA_0%,#EEF0E7_58%,#C6CDBF_100%)] px-5 py-5 text-center shadow-lg shadow-black/15">
           <img
             src="/brand/icon.png"
             alt=""
-            className="h-24 w-24 rounded-2xl object-cover shadow-md shadow-black/15 ring-1 ring-brandGold/45"
+            className="h-20 w-20 rounded-2xl object-cover shadow-md shadow-black/15 ring-1 ring-brandGold/45"
             aria-hidden="true"
           />
-          <div className="mt-4 flex min-w-0 flex-col items-center">
+          <div className="w-full min-w-0 max-w-[15rem]">
             <img
               src="/brand/logo.png"
               alt={t('app.sidebar.title')}
-              className="h-10 max-w-[15rem] object-contain"
+              className="mx-auto h-9 w-full max-w-full object-contain"
             />
-            <div className="mt-2 text-xs text-[#3B563F]">{t('app.sidebar.product_tagline')}</div>
+            <div className="mt-2 text-xs leading-snug text-[#3B563F] break-words">{t('app.sidebar.product_tagline')}</div>
           </div>
         </div>
-        <h1 className="st-title mb-1">{t('app.title')}</h1>
-        <div className="st-caption mb-5">
-          {mode === 'login' ? t('auth.subtitle.login') : t('auth.subtitle.register')}
-        </div>
+        {mode === 'register' && (
+          <div className="st-caption mb-5">{t('auth.subtitle.register')}</div>
+        )}
 
         <form className="space-y-3" onSubmit={handleSubmit((v) => m.mutate(v))}>
           <div>

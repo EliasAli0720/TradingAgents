@@ -4,7 +4,7 @@
 type Lang = 'zh' | 'en';
 
 const DICT: Record<string, { zh: string; en: string }> = {
-  'app.page_title':           { zh: 'AI黄财神 仪表盘', en: 'AI Huang Caishen Dashboard' },
+  'app.page_title':           { zh: 'AI黄财神 仪表盘', en: 'AI Huang Cai Shen Dashboard' },
   'app.title':                { zh: 'AI黄财神 自动交易仪表盘', en: 'AI Huang Caishen Trading Dashboard' },
   'app.sidebar.title':        { zh: 'AI黄财神', en: 'AI Huang Caishen' },
   'app.sidebar.product_tagline': { zh: '智能研究 · 纪律执行', en: 'Intelligent research. Disciplined execution.' },
@@ -222,6 +222,7 @@ const DICT: Record<string, { zh: string; en: string }> = {
   'settings.not_signed_in':    { zh: '未登录', en: 'Not signed in' },
   'settings.no_permission':    { zh: '当前账号没有访问该页面的权限。', en: 'This account does not have permission to access this page.' },
   'settings.role':             { zh: '角色：{role}', en: 'Role: {role}' },
+  'settings.language_hint':    { zh: '界面与研究报告将使用所选语言显示。', en: 'The interface and research reports will display in your selected language.' },
 
   'account.caption':           { zh: '修改当前账号的登录密码。', en: 'Change the login password for the current account.' },
   'account.current_password':  { zh: '当前密码', en: 'Current Password' },

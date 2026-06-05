@@ -50,7 +50,7 @@ export default function Drawer({ open, onClose, side = 'right', title, width = 3
           <div className="font-semibold">{title}</div>
           <button className="btn-ghost px-2 py-1" onClick={onClose} aria-label={t('common.close')}>✕</button>
         </header>
-        <div className="flex-1 overflow-y-auto p-4 text-sm">
+        <div className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden p-4 text-sm">
           {children}
         </div>
       </aside>

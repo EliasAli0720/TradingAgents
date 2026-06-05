@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate } from 'react-router-dom';
+import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom';
 import AppLayout from './components/layout/AppLayout';
 import RequireAuth from './components/layout/RequireAuth';
 import RequireRole from './components/layout/RequireRole';
@@ -22,6 +22,13 @@ import AdminUsersPage from './routes/admin/users';
 import AdminRunsPage from './routes/admin/runs';
 
 export const router = createBrowserRouter([
+  {
+    element: (
+      <div className="h-full min-h-0">
+        <Outlet />
+      </div>
+    ),
+    children: [
   { path: '/login', element: <LoginPage /> },
   {
     element: <RequireAuth><AppLayout /></RequireAuth>,
@@ -52,4 +59,6 @@ export const router = createBrowserRouter([
     ],
   },
   { path: '*', element: <Navigate to="/" replace /> },
+    ],
+  },
 ]);

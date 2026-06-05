@@ -123,9 +123,9 @@ export default function QuickTrade() {
         : null;
 
   return (
-    <div>
+    <div className="min-w-0">
       <div className="font-semibold mb-2">{t('qt.header')}</div>
-      <div className={`space-y-2 ${disabledReason ? 'opacity-60' : ''}`}>
+      <div className={`space-y-2 min-w-0 ${disabledReason ? 'opacity-60' : ''}`}>
         <input
           className="input"
           placeholder={t('qt.ticker')}
@@ -133,9 +133,9 @@ export default function QuickTrade() {
           disabled={!!disabledReason}
           onChange={(e) => setTicker(e.target.value.toUpperCase())}
         />
-        <div className="flex gap-2">
+        <div className="grid grid-cols-2 gap-2 min-w-0">
           <select
-            className="input"
+            className="input min-w-0 w-full"
             value={side}
             disabled={!!disabledReason}
             onChange={(e) => setSide(e.target.value as Side)}
@@ -144,7 +144,7 @@ export default function QuickTrade() {
             <option value="sell">{t('qt.side.sell')}</option>
           </select>
           <select
-            className="input"
+            className="input min-w-0 w-full"
             value={orderType}
             disabled={!!disabledReason}
             onChange={(e) => setOrderType(e.target.value as OType)}
@@ -174,16 +174,16 @@ export default function QuickTrade() {
           />
         )}
 
-        <div className="flex gap-2">
+        <div className="grid grid-cols-2 gap-2 min-w-0">
           <button
-            className="btn-ghost btn-block"
+            className="btn-ghost w-full min-w-0"
             disabled={!!disabledReason || !valid || !canPreview || previewMut.isPending}
             onClick={() => previewMut.mutate()}
           >
             {previewMut.isPending ? t('qt.previewing') : t('qt.preview')}
           </button>
           <button
-            className="btn-primary btn-block"
+            className="btn-primary w-full min-w-0"
             disabled={!!disabledReason || !valid || placeMut.isPending}
             onClick={onSubmit}
           >

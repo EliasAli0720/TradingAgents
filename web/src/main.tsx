@@ -12,7 +12,9 @@ const qc = new QueryClient({
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={qc}>
-      <RouterProvider router={router} />
+      <div className="h-full min-h-0">
+        <RouterProvider router={router} />
+      </div>
     </QueryClientProvider>
   </React.StrictMode>,
 );
