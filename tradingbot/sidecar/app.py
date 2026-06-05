@@ -74,6 +74,15 @@ def _infer_paper(account_id: Optional[str], fallback: bool) -> bool:
     return fallback
 
 
+def _account_list(primary: Optional[str], accounts: list) -> list[str]:
+    out: list[str] = []
+    for candidate in [primary, *accounts]:
+        account_id = str(candidate or "").strip()
+        if account_id and account_id not in out:
+            out.append(account_id)
+    return out
+
+
 class ConnectRequest(BaseModel):
     broker: str = "ibkr"
     host: str = "127.0.0.1"
@@ -157,6 +166,17 @@ class BrokerWorker:
             raise RuntimeError("broker not connected")
         return self._broker
 
+    def _broker_for_account(self, account_id: Optional[str]) -> Any:
+        broker = self._require()
+        if not account_id or getattr(broker, "_account_id", None) == account_id:
+            return broker
+        conn = getattr(broker, "_conn", None) or self._conn
+        if conn is not None and self._broker_name.lower() == "ibkr":
+            from tradingbot.broker.ibkr import IBKRBroker
+
+            return IBKRBroker(conn, account_id=account_id, paper=self._paper)
+        return broker
+
     # -- operations (always run on the worker thread) --------------------- #
 
     def connect(self, opts: ConnectRequest) -> dict:
@@ -218,19 +238,21 @@ class BrokerWorker:
             last_error = h.get("last_error")
         else:  # mock / brokers without a health() probe
             online, accounts, last_error = True, [], None
+        accounts = _account_list(self._account_id, accounts)
         return {
             "broker": self._broker_name,
             "connected": online,
             "gateway_online": online,
             "brokerage_session": online,
             "account_id": self._account_id or (accounts[0] if accounts else None),
+            "accounts": accounts,
             "paper": self._paper,
             "last_refresh_at": _now_iso(),
             "last_error": last_error,
         }
 
-    def account(self) -> dict:
-        a = self._require().get_account()
+    def account(self, account_id: Optional[str] = None) -> dict:
+        a = self._broker_for_account(account_id).get_account()
         return {
             "cash": a.cash,
             "portfolio_value": a.portfolio_value,
@@ -238,7 +260,7 @@ class BrokerWorker:
             "equity": a.equity,
         }
 
-    def positions(self) -> list[dict]:
+    def positions(self, account_id: Optional[str] = None) -> list[dict]:
         return [
             {
                 "ticker": p.ticker,
@@ -250,7 +272,7 @@ class BrokerWorker:
                 "unrealized_pnl_pct": p.unrealized_pnl_pct,
                 "side": p.side,
             }
-            for p in self._require().get_positions()
+            for p in self._broker_for_account(account_id).get_positions()
         ]
 
     def orders(self) -> list[dict]:
@@ -369,13 +391,13 @@ def disconnect() -> dict:
 
 
 @app.get("/account", dependencies=[Depends(require_token)])
-def account() -> dict:
-    return _run(_worker.account)
+def account(account_id: Optional[str] = None) -> dict:
+    return _run(lambda: _worker.account(account_id))
 
 
 @app.get("/positions", dependencies=[Depends(require_token)])
-def positions() -> list[dict]:
-    return _run(_worker.positions)
+def positions(account_id: Optional[str] = None) -> list[dict]:
+    return _run(lambda: _worker.positions(account_id))
 
 
 @app.get("/orders", dependencies=[Depends(require_token)])

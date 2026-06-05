@@ -108,7 +108,79 @@ def test_connect_auto_adopts_logged_in_account(monkeypatch) -> None:
     c = _client()
     status = c.post("/connect", json={"broker": "ibkr", "paper": False}, headers=AUTH).json()
     assert status["account_id"] == "DU441028"
+    assert status["accounts"] == ["DU441028"]
     assert status["paper"] is True  # DU prefix wins over the paper=False hint
+    c.post("/disconnect", headers=AUTH)
+
+
+def test_account_and_positions_can_target_selected_account(monkeypatch) -> None:
+    """The desktop UI can select any managed IBKR account; sidecar reads must
+    use that account instead of the one originally adopted on connect."""
+    import tradingbot.sidecar.app as appmod
+    from tradingbot.broker.ibkr_connection import AccountValue, RawPosition
+
+    class FakeConn:
+        def __init__(self):
+            self.summary_accounts = []
+            self.position_accounts = []
+
+        def ensure_connected(self):
+            pass
+
+        def managed_accounts(self):
+            return ["DUPRIMARY", "DUSECOND"]
+
+        def health(self):
+            return {
+                "gateway_online": True,
+                "accounts": ["DUPRIMARY", "DUSECOND"],
+                "last_error": None,
+            }
+
+        def account_summary(self, account_id=None):
+            self.summary_accounts.append(account_id)
+            return [
+                AccountValue("AvailableFunds", "2000", "USD"),
+                AccountValue("NetLiquidation", "2000", "USD"),
+                AccountValue("BuyingPower", "8000", "USD"),
+                AccountValue("TotalCashValue", "2000", "USD"),
+            ]
+
+        def positions(self, account_id=None):
+            self.position_accounts.append(account_id)
+            return [
+                RawPosition(
+                    symbol="MSFT",
+                    conid=123,
+                    position=2,
+                    avg_cost=100.0,
+                    market_price=110.0,
+                    market_value=220.0,
+                    unrealized_pnl=20.0,
+                )
+            ]
+
+    created = {}
+
+    def build_broker(_cfg, mode="local"):
+        from tradingbot.broker.ibkr import IBKRBroker
+
+        conn = FakeConn()
+        created["conn"] = conn
+        return IBKRBroker(conn, account_id=None)
+
+    monkeypatch.setattr(appmod, "BUILD_BROKER", build_broker)
+    c = _client()
+    status = c.post("/connect", json={"broker": "ibkr"}, headers=AUTH).json()
+    assert status["accounts"] == ["DUPRIMARY", "DUSECOND"]
+
+    account = c.get("/account", params={"account_id": "DUSECOND"}, headers=AUTH)
+    assert account.status_code == 200, account.text
+    positions = c.get("/positions", params={"account_id": "DUSECOND"}, headers=AUTH)
+    assert positions.status_code == 200, positions.text
+
+    assert created["conn"].summary_accounts == ["DUSECOND"]
+    assert created["conn"].position_accounts == ["DUSECOND"]
     c.post("/disconnect", headers=AUTH)
 
 

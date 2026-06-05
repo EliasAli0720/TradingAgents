@@ -9,7 +9,7 @@ import pytest
 
 from tradingbot.broker.base import OrderSide, OrderStatus, OrderType
 from tradingbot.broker.ibkr import IBKRBroker, _to_order_status
-from tradingbot.broker.ibkr_connection import RawOrder, WhatIfResult
+from tradingbot.broker.ibkr_connection import LocalIBKRConnection, RawOrder, WhatIfResult
 from tests.ibkr_fakes import FakeIBKRConnection
 
 pytestmark = pytest.mark.unit
@@ -103,6 +103,35 @@ def test_cancel_known_and_unknown():
     placed = broker.submit_order("AAPL", 1, OrderSide.BUY)
     assert broker.cancel_order(placed.order_id) is True
     assert broker.cancel_order("nope") is False
+
+
+def test_local_cancel_matches_original_order_id_after_perm_id_arrives():
+    class Order:
+        orderId = 17
+        permId = 9001
+
+    class Trade:
+        order = Order()
+
+    class FakeIB:
+        def __init__(self):
+            self.cancelled = []
+
+        def isConnected(self):
+            return True
+
+        def openTrades(self):
+            return [Trade()]
+
+        def cancelOrder(self, order):
+            self.cancelled.append(order)
+
+    ib = FakeIB()
+    conn = LocalIBKRConnection()
+    conn._ib = ib
+
+    assert conn.cancel("17") is True
+    assert ib.cancelled == [Trade.order]
 
 
 def test_order_history_newest_first():

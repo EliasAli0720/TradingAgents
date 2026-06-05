@@ -1,4 +1,4 @@
-import { useBrokerConnection } from '@/hooks/useBrokerConnection';
+import { useBrokerAccountContext } from '@/hooks/useBrokerAccountContext';
 import { t } from '@/i18n';
 
 // Display registry for known brokers. `simulated: true` means the broker itself
@@ -17,8 +17,9 @@ const BROKER_META: Record<string, { label: string; simulated: boolean }> = {
 //   • mock broker           → green 「模拟 · MOCK」
 //   • real brokerage login  → red   「真实用户 · IBKR · 实盘/模拟盘」
 export default function BrokerBadge() {
-  const { status, connected } = useBrokerConnection();
-  const key = (status?.broker ?? '').toLowerCase();
+  const { selected } = useBrokerAccountContext();
+  const connected = Boolean(selected);
+  const key = (selected?.broker ?? '').toLowerCase();
   const meta = BROKER_META[key];
 
   if (!connected || !meta) {
@@ -38,7 +39,7 @@ export default function BrokerBadge() {
     );
   }
 
-  const board = status?.paper ? t('app.sidebar.board_paper') : t('app.sidebar.board_live');
+  const board = selected?.paper ? t('app.sidebar.board_paper') : t('app.sidebar.board_live');
   return (
     <div className="mode-pill bg-danger text-white">
       {t('app.sidebar.mode_real')} · {meta.label} · {board}

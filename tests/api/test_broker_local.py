@@ -118,6 +118,8 @@ def test_local_proposal_buy_sizes_and_persists(tmp_path):
     assert appr["status"] == "pending"
     assert appr["quantity"] == 25  # 100000 * 0.05 / 200
     assert appr["risk_verdict"] is not None and appr["risk_verdict"]["approved"] is True
+    assert appr["proposal_report"]["summary"] == "BUY AAPL 25 shares at estimated 200.00 (value 5000.00)."
+    assert appr["proposal_report"]["sizing"]["final_quantity"] == 25
 
 
 def test_local_proposal_hold_is_422(tmp_path):
@@ -202,6 +204,29 @@ def test_manual_order_recorded_and_listed(tmp_path):
     # and it flows into the per-account trade ledger
     trades = client.get("/broker/trades", params={"account_id": "DUMANUAL"}).json()
     assert any(r["ticker"] == "TSLA" for r in trades["trades"])
+
+
+def test_orders_can_be_filtered_by_account_id(tmp_path):
+    client, _ = _admin_client(tmp_path)
+    for account_id, ticker in (("DUWEBULL", "AAPL"), ("DULOCAL", "MSFT")):
+        resp = client.post(
+            "/broker/orders/manual",
+            json={
+                "broker_order_id": f"m-{account_id}",
+                "account_id": account_id,
+                "ticker": ticker,
+                "side": "buy",
+                "order_type": "market",
+                "quantity": 1,
+                "status": "filled",
+                "filled_qty": 1,
+                "filled_avg_price": 100.0,
+            },
+        )
+        assert resp.status_code == 200, resp.text
+
+    webull_orders = client.get("/broker/orders", params={"account_id": "DUWEBULL"}).json()
+    assert [order["ticker"] for order in webull_orders] == ["AAPL"]
 
 
 def test_manual_order_requires_trader_role(tmp_path):

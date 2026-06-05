@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
-import { getBrokerChannel } from '@/api/brokerChannel';
+import { useBrokerAccountContext } from '@/hooks/useBrokerAccountContext';
+import BrokerAccountSelector from '@/components/broker/BrokerAccountSelector';
 import { Subheader, Caption, Info } from '@/components/ui/Page';
 import Metric, { KpiRow } from '@/components/ui/Metric';
 import { getLocale, t } from '@/i18n';
@@ -30,18 +31,18 @@ function Bar({ ratio, limit }: { ratio: number; limit: number }) {
 }
 
 export default function RiskPage() {
-  const channel = getBrokerChannel();
-  const status = useQuery({ queryKey: ['broker', 'status'], queryFn: () => channel.status() });
-  const connected = !!status.data?.connected;
+  const broker = useBrokerAccountContext();
+  const selected = broker.selected;
+  const connected = Boolean(selected);
 
   const account = useQuery({
-    queryKey: ['broker', 'account'],
-    queryFn: () => channel.account(),
+    queryKey: ['broker', 'account', selected?.key],
+    queryFn: broker.account,
     enabled: connected,
   });
   const positions = useQuery({
-    queryKey: ['broker', 'positions'],
-    queryFn: () => channel.positions(),
+    queryKey: ['broker', 'positions', selected?.key],
+    queryFn: broker.positions,
     enabled: connected,
     refetchInterval: 15000,
   });
@@ -61,6 +62,13 @@ export default function RiskPage() {
     <div>
       <Subheader>{t('nav.risk')}</Subheader>
       <Caption>{t('risk.caption')}</Caption>
+      <div className="mb-3 mt-3">
+        <BrokerAccountSelector
+          options={broker.options}
+          selectedKey={broker.selectedKey}
+          onChange={broker.setSelectedKey}
+        />
+      </div>
 
       {!connected ? (
         <div className="mt-3"><Info>{t('broker.not_connected_generic')}</Info></div>

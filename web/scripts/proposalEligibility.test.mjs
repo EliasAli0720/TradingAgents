@@ -13,7 +13,7 @@ const js = ts.transpileModule(source, {
 
 const mod = { exports: {} };
 vm.runInNewContext(js, { module: mod, exports: mod.exports });
-const { proposalEligibility, proposalButtonLabelKey } = mod.exports;
+const { normalizeProposalSignal, proposalEligibility, proposalButtonLabelKey } = mod.exports;
 
 assert.equal(
   proposalEligibility({ canOperate: true, runStatus: 'succeeded', decision: 'Hold' }).state,
@@ -21,6 +21,15 @@ assert.equal(
 );
 assert.equal(
   proposalEligibility({ canOperate: true, runStatus: 'succeeded', decision: 'BUY' }).state,
+  'actionable',
+);
+assert.equal(normalizeProposalSignal('**Rating**: Buy\n\nEnter gradually.'), 'BUY');
+assert.equal(
+  proposalEligibility({
+    canOperate: true,
+    runStatus: 'succeeded',
+    decision: '**Rating**: Buy\n\nEnter gradually.',
+  }).state,
   'actionable',
 );
 assert.equal(
@@ -194,6 +203,52 @@ const connectedWebull = {
     () => createProposal('run-none', 'AAPL'),
     (err) => err?.detail === 'broker_not_connected',
   );
+}
+
+{
+  const calls = [];
+  const brokerApi = {
+    status: async () => ({
+      broker: 'ibkr',
+      connected: false,
+      gateway_online: false,
+      brokerage_session: false,
+      account_id: null,
+      paper: true,
+      last_refresh_at: null,
+      last_error: 'connector not running',
+    }),
+    createProposal: async () => {
+      calls.push(['server']);
+      return { approval_id: 'server-proposal' };
+    },
+    createLocalProposal: async (payload) => {
+      calls.push(['local', payload.price]);
+      return { approval_id: 'local-proposal' };
+    },
+  };
+  const channel = {
+    kind: 'local',
+    status: async () => ({
+      broker: 'ibkr',
+      connected: true,
+      gateway_online: true,
+      brokerage_session: true,
+      account_id: 'DULOCAL',
+      paper: true,
+      last_refresh_at: null,
+      last_error: null,
+    }),
+    account: async () => ({ cash: 100, portfolio_value: 100, buying_power: 100, equity: 100 }),
+    positions: async () => [{ ticker: 'MSFT', qty: 2, current_price: 422.06 }],
+    quote: async () => {
+      throw { status: 502, detail: "No price available for 'MSFT' from IBKR" };
+    },
+  };
+  const { createProposal } = loadTradeFlow({ brokerApi, channel });
+  const proposal = await createProposal('run-local-held', 'msft');
+  assert.equal(proposal.approval_id, 'local-proposal');
+  assert.deepEqual(calls, [['local', 422.06]]);
 }
 
 {

@@ -87,6 +87,7 @@ export default function QuickTrade() {
       await brokerApi.recordManualOrder({
         broker_order_id: placed.broker_order_id,
         account_id: accountId,
+        broker: status?.broker ?? 'ibkr',
         ticker: placed.ticker,
         side: placed.side,
         order_type: placed.order_type,

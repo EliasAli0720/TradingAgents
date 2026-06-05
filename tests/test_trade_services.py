@@ -71,6 +71,56 @@ def test_buy_proposal_sized_and_persisted():
     assert out.approval.status == "pending"
 
 
+def test_buy_proposal_includes_explanation_report():
+    repo, session = _repo()
+    broker, _ = _broker(cash=100_000.0, price=200.0)
+    builder = TradeProposalBuilder(broker, SignalMapper())
+    out = builder.build(
+        repo=repo,
+        requested_by_user_id="u1",
+        ticker="AAPL",
+        signal="BUY",
+        reasoning="Portfolio manager recommends accumulation after debate.",
+        run_id="run-report",
+    )
+    session.commit()
+
+    assert out.created
+    report = out.approval.proposal_report
+    assert report["summary"] == "BUY AAPL 25 shares at estimated 200.00 (value 5000.00)."
+    assert report["signal"]["raw"] == "BUY"
+    assert report["signal"]["normalized"] == "BUY"
+    assert report["signal"]["action"] == "buy"
+    assert report["sizing"]["basis"] == "cash"
+    assert report["sizing"]["basis_amount"] == 100_000.0
+    assert report["sizing"]["allocation_fraction"] == 0.05
+    assert report["sizing"]["target_value"] == 5_000.0
+    assert report["sizing"]["estimated_price"] == 200.0
+    assert report["sizing"]["computed_quantity"] == 25.0
+    assert report["sizing"]["final_quantity"] == 25
+    assert report["sizing"]["estimated_value"] == 5_000.0
+    assert report["risk"]["approved"] is None
+    assert report["risk"]["reason"] == "No advisory risk gate configured"
+    assert report["agent_reasoning"] == "Portfolio manager recommends accumulation after debate."
+
+
+def test_buy_proposal_accepts_rating_markdown_decision():
+    repo, session = _repo()
+    broker, _ = _broker(cash=100_000.0, price=200.0)
+    builder = TradeProposalBuilder(broker, SignalMapper())
+    out = builder.build(
+        repo=repo,
+        requested_by_user_id="u1",
+        ticker="AAPL",
+        signal="**Rating**: Buy\n\nEnter gradually near support.",
+        run_id="run-rating-buy",
+    )
+    session.commit()
+    assert out.created
+    assert out.approval.side == "buy"
+    assert out.approval.quantity == 25
+
+
 def test_buy_proposal_uses_one_share_minimum_when_affordable():
     repo, session = _repo()
     broker, _ = _broker(cash=5_000.0, price=420.0)
@@ -136,6 +186,8 @@ def test_risk_gate_caps_quantity():
     assert out.created
     assert out.approval.quantity == 5
     assert out.approval.risk_verdict["reason"] == "capped"
+    assert out.approval.proposal_report["risk"]["adjusted_qty"] == 5
+    assert out.approval.proposal_report["sizing"]["final_quantity"] == 5
 
 
 def test_risk_gate_zero_qty_blocks_proposal():
@@ -184,6 +236,8 @@ def test_execute_places_and_mirrors_order():
     assert mirror is not None
     assert mirror.ticker == "AAPL"
     assert mirror.approval_id == approval.approval_id
+    assert mirror.account_id == "DU1"
+    assert mirror.broker == "ibkr"
 
 
 def test_execute_requires_approved_state():

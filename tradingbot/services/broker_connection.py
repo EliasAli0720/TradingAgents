@@ -27,12 +27,14 @@ class BrokerConnectionService:
         paper = self._config.get("paper_trading", True)
         row = repo.get_status()
         if row is None:
+            account_id = self._config.get("ibkr_account_id") or None
             return {
                 "broker": self._config.get("broker", "ibkr"),
                 "connected": False,
                 "gateway_online": False,
                 "brokerage_session": False,
-                "account_id": self._config.get("ibkr_account_id") or None,
+                "account_id": account_id,
+                "accounts": [account_id] if account_id else [],
                 "paper": paper,
                 "last_refresh_at": None,
                 "last_error": "connector not running",
@@ -43,6 +45,7 @@ class BrokerConnectionService:
             "gateway_online": row.gateway_online,
             "brokerage_session": row.brokerage_session,
             "account_id": row.account_id,
+            "accounts": [row.account_id] if row.account_id else [],
             "paper": row.paper,
             "last_refresh_at": row.last_refresh_at.isoformat() if row.last_refresh_at else None,
             "last_error": row.last_error,

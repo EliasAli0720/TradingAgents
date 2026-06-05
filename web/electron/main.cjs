@@ -99,6 +99,11 @@ function createWindow() {
 // Broker IPC — the renderer's localBrokerClient calls these; the main process
 // holds the sidecar URL + token and makes the actual HTTP calls. Errors reject
 // the invoke() promise with the sidecar's detail message.
+function withAccount(pathname, accountId) {
+  if (!accountId) return pathname;
+  return `${pathname}?account_id=${encodeURIComponent(accountId)}`;
+}
+
 function registerBrokerIpc() {
   ipcMain.handle('broker:ready', () => ({ ready: sidecar.ready, lastError: sidecar.lastError }));
   ipcMain.handle('broker:status', () => sidecar.call('GET', '/health'));
@@ -107,8 +112,8 @@ function registerBrokerIpc() {
   );
   ipcMain.handle('broker:connect', (_e, opts) => sidecar.call('POST', '/connect', opts ?? {}));
   ipcMain.handle('broker:disconnect', () => sidecar.call('POST', '/disconnect'));
-  ipcMain.handle('broker:account', () => sidecar.call('GET', '/account'));
-  ipcMain.handle('broker:positions', () => sidecar.call('GET', '/positions'));
+  ipcMain.handle('broker:account', (_e, accountId) => sidecar.call('GET', withAccount('/account', accountId)));
+  ipcMain.handle('broker:positions', (_e, accountId) => sidecar.call('GET', withAccount('/positions', accountId)));
   ipcMain.handle('broker:orders', () => sidecar.call('GET', '/orders'));
   ipcMain.handle('broker:quote', (_e, ticker) => sidecar.call('POST', '/quote', { ticker }));
   ipcMain.handle('broker:preview', (_e, req) => sidecar.call('POST', '/preview', req));

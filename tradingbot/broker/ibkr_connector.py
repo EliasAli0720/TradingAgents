@@ -78,6 +78,7 @@ class IBKRConnector:
                     quantity=raw.quantity,
                     status=raw.status,
                     account_id=self._account_id,
+                    broker="ibkr",
                     conid=raw.conid,
                     limit_price=raw.limit_price,
                     time_in_force=raw.time_in_force,

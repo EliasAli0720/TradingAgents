@@ -52,8 +52,8 @@ export interface BrokerLiveChannel {
   status(): Promise<BrokerStatus>;
   // Local-only: scan well-known IBKR ports for one-click connect (undefined on server).
   discover?(host?: string): Promise<{ candidates: BrokerCandidate[] }>;
-  account(): Promise<BrokerAccount>;
-  positions(): Promise<BrokerPosition[]>;
+  account(accountId?: string): Promise<BrokerAccount>;
+  positions(accountId?: string): Promise<BrokerPosition[]>;
   orders(): Promise<BrokerOrder[]>;
   connect(opts: ConnectOpts): Promise<BrokerStatus>;
   disconnect(): Promise<void>;
@@ -70,8 +70,8 @@ const serverChannel: BrokerLiveChannel = {
   kind: 'server',
   supportsConnect: false,
   status: () => brokerApi.status(),
-  account: () => brokerApi.account(),
-  positions: () => brokerApi.positions(),
+  account: (accountId) => brokerApi.account(accountId ? { account_id: accountId } : undefined),
+  positions: (accountId) => brokerApi.positions(accountId ? { account_id: accountId } : undefined),
   orders: () => brokerApi.orders(),
   connect: () => brokerApi.refresh(),
   disconnect: async () => {},
@@ -85,8 +85,8 @@ function localChannel(): BrokerLiveChannel {
     supportsConnect: true,
     status: () => d.broker.status(),
     discover: (host) => d.broker.discover(host),
-    account: () => d.broker.account(),
-    positions: () => d.broker.positions(),
+    account: (accountId) => d.broker.account(accountId),
+    positions: (accountId) => d.broker.positions(accountId),
     orders: () => d.broker.orders(),
     connect: (opts) => d.broker.connect(opts),
     disconnect: async () => {

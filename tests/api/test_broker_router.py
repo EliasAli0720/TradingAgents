@@ -138,6 +138,7 @@ def test_status_not_connected_when_no_mirror_row():
     body = client.get("/broker/status").json()
     assert body["connected"] is False
     assert body["gateway_online"] is False
+    assert body["accounts"] == []
     assert body["last_error"] == "connector not running"
 
 
@@ -156,6 +157,7 @@ def test_refresh_status_reports_active_webull_credential():
     assert body["broker"] == "webull"
     assert body["connected"] is True
     assert body["account_id"] == "DUWEBULL"
+    assert body["accounts"] == ["DUWEBULL"]
 
 
 def test_account_and_positions_from_broker():
@@ -258,6 +260,11 @@ def test_create_proposal_then_approve_places_order():
     assert approval["status"] == "pending"
     assert approval["side"] == "buy"
     assert approval["quantity"] == 25  # 100000 * 0.05 / 200
+    assert approval["proposal_report"]["summary"] == (
+        "BUY AAPL 25 shares at estimated 200.00 (value 5000.00)."
+    )
+    assert approval["proposal_report"]["sizing"]["final_quantity"] == 25
+    assert approval["proposal_report"]["agent_reasoning"] == "buy it"
 
     approved = client.post(f"/broker/approvals/{approval['approval_id']}/approve")
     assert approved.status_code == 200
@@ -315,3 +322,7 @@ def test_cancel_order_endpoint():
     resp = client.post(f"/broker/orders/{order_id}/cancel")
     assert resp.status_code == 200
     assert resp.json()["cancelled"] is True
+
+    orders = client.get("/broker/orders").json()
+    saved = next(o for o in orders if o["broker_order_id"] == order_id)
+    assert saved["status"] == "cancelled"

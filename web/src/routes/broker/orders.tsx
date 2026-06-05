@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { brokerApi } from '@/api/broker';
-import { getBrokerChannel } from '@/api/brokerChannel';
+import { cancelOrder } from '@/api/orderCancelFlow';
+import { useBrokerAccountContext } from '@/hooks/useBrokerAccountContext';
+import BrokerAccountSelector from '@/components/broker/BrokerAccountSelector';
 import { useAuth } from '@/hooks/useAuth';
 import { Subheader, Caption, ErrorBox } from '@/components/ui/Page';
 import { getLocale, t } from '@/i18n';
@@ -32,15 +33,19 @@ const OPEN_STATUSES = new Set(['pending', 'partially_filled']);
 export default function BrokerOrdersPage() {
   const { canOperate } = useAuth();
   const qc = useQueryClient();
-  const isWebull = getBrokerChannel().kind === 'server';
+  const broker = useBrokerAccountContext();
+  const selected = broker.selected;
+  const isWebull = selected?.broker === 'webull';
 
   const orders = useQuery({
-    queryKey: ['broker', 'orders'],
-    queryFn: brokerApi.orders,
+    queryKey: ['broker', 'orders', selected?.key],
+    queryFn: broker.orders,
+    enabled: Boolean(selected),
     refetchInterval: 10000,
   });
   const cancel = useMutation({
-    mutationFn: brokerApi.cancel,
+    mutationFn: (order: Parameters<typeof cancelOrder>[0]) =>
+      cancelOrder(order, { source: selected?.source }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['broker', 'orders'] }),
   });
 
@@ -48,6 +53,13 @@ export default function BrokerOrdersPage() {
     <div>
       <Subheader>{t('broker.orders.title')}</Subheader>
       <Caption>{t(isWebull ? 'broker.orders.caption_webull' : 'broker.orders.caption')}</Caption>
+      <div className="mb-3">
+        <BrokerAccountSelector
+          options={broker.options}
+          selectedKey={broker.selectedKey}
+          onChange={broker.setSelectedKey}
+        />
+      </div>
 
       {orders.isLoading ? (
         <div className="text-muted">{t('common.loading')}</div>
@@ -89,7 +101,7 @@ export default function BrokerOrdersPage() {
                       <button
                         className="btn-ghost"
                         disabled={cancel.isPending}
-                        onClick={() => cancel.mutate(o.broker_order_id)}
+                        onClick={() => cancel.mutate(o)}
                       >
                         {t('broker.action.cancel')}
                       </button>

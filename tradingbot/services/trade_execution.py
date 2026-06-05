@@ -95,6 +95,7 @@ class TradeExecutionService:
             repo.mark_failed(approval_id, f"order failed: {exc}")
             return ExecutionResult(None, "failed", str(exc))
 
+        account_id = account_id or self._broker_account_id()
         repo.upsert_order(
             broker_order_id=order.order_id,
             ticker=order.ticker,
@@ -105,6 +106,7 @@ class TradeExecutionService:
             approval_id=approval_id,
             requested_by_user_id=approval.requested_by_user_id,
             account_id=account_id,
+            broker=self._broker_name(),
             limit_price=order.limit_price,
             filled_qty=order.filled_qty,
             filled_avg_price=order.filled_avg_price,
@@ -125,6 +127,28 @@ class TradeExecutionService:
             "Executed approval %s -> order %s (%s)", approval_id, order.order_id, order.status.value
         )
         return ExecutionResult(order.order_id, "submitted", "submitted")
+
+    def _broker_name(self) -> str:
+        name = self._broker.__class__.__name__.lower()
+        if "webull" in name:
+            return "webull"
+        if "ibkr" in name:
+            return "ibkr"
+        return getattr(self._broker, "broker", None) or "ibkr"
+
+    def _broker_account_id(self) -> Optional[str]:
+        account_id = getattr(self._broker, "_account_id", None)
+        if account_id:
+            return account_id
+        try:
+            health = self._broker.health()
+        except Exception:  # noqa: BLE001 - account id is mirror metadata
+            return None
+        account_id = health.get("account_id")
+        if account_id:
+            return account_id
+        accounts = health.get("accounts") or []
+        return accounts[0] if accounts else None
 
 
 def build_execution_service(config, redis_client) -> TradeExecutionService:

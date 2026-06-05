@@ -6,6 +6,7 @@ export type BrokerStatus = {
   gateway_online: boolean;
   brokerage_session: boolean;
   account_id: string | null;
+  accounts?: string[];
   paper: boolean;
   last_refresh_at: string | null;
   last_error: string | null;
@@ -32,6 +33,7 @@ export type BrokerPosition = {
 export type BrokerOrder = {
   broker_order_id: string;
   account_id: string | null;
+  broker: string;
   ticker: string;
   side: string;
   order_type: string;
@@ -60,6 +62,7 @@ export type TradeApproval = {
   whatif_commission: number | null;
   risk_verdict: Record<string, unknown> | null;
   agent_reasoning: string | null;
+  proposal_report: Record<string, unknown> | null;
   status: string;
   requested_by_user_id: string;
   approved_by_user_id: string | null;
@@ -176,14 +179,14 @@ export const brokerApi = {
   async status(): Promise<BrokerStatus> {
     return (await http.get<BrokerStatus>('/broker/status')).data;
   },
-  async account(): Promise<BrokerAccount> {
-    return (await http.get<BrokerAccount>('/broker/account')).data;
+  async account(params?: { account_id?: string; broker?: string }): Promise<BrokerAccount> {
+    return (await http.get<BrokerAccount>('/broker/account', { params })).data;
   },
-  async positions(): Promise<BrokerPosition[]> {
-    return (await http.get<BrokerPosition[]>('/broker/positions')).data;
+  async positions(params?: { account_id?: string; broker?: string }): Promise<BrokerPosition[]> {
+    return (await http.get<BrokerPosition[]>('/broker/positions', { params })).data;
   },
-  async orders(): Promise<BrokerOrder[]> {
-    return (await http.get<BrokerOrder[]>('/broker/orders')).data;
+  async orders(params?: { account_id?: string; broker?: string }): Promise<BrokerOrder[]> {
+    return (await http.get<BrokerOrder[]>('/broker/orders', { params })).data;
   },
   async approvals(status?: string): Promise<TradeApproval[]> {
     return (await http.get<TradeApproval[]>('/broker/approvals', { params: status ? { status } : undefined })).data;
@@ -210,6 +213,7 @@ export const brokerApi = {
       filled_avg_price?: number | null;
       limit_price?: number | null;
       account_id?: string;
+      broker?: string;
     },
   ): Promise<ApproveResult> {
     return (await http.post<ApproveResult>(`/broker/approvals/${approvalId}/executed`, payload)).data;
@@ -222,6 +226,16 @@ export const brokerApi = {
   },
   async cancel(orderId: string): Promise<{ cancelled: boolean }> {
     return (await http.post<{ cancelled: boolean }>(`/broker/orders/${orderId}/cancel`)).data;
+  },
+  async updateOrderStatus(
+    orderId: string,
+    payload: {
+      status: string;
+      filled_qty?: number;
+      filled_avg_price?: number | null;
+    },
+  ): Promise<BrokerOrder> {
+    return (await http.post<BrokerOrder>(`/broker/orders/${orderId}/status`, payload)).data;
   },
   async refresh(): Promise<BrokerStatus> {
     return (await http.post<BrokerStatus>('/broker/refresh')).data;
@@ -246,6 +260,7 @@ export const brokerApi = {
   async recordManualOrder(payload: {
     broker_order_id: string;
     account_id: string;
+    broker?: string;
     ticker: string;
     side: string;
     order_type: string;

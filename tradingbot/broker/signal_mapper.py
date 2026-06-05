@@ -1,6 +1,7 @@
 """Maps 5-tier agent signals to concrete order instructions."""
 
 from dataclasses import dataclass
+import re
 from typing import Optional
 
 from .base import OrderSide
@@ -33,6 +34,10 @@ class SignalMapper:
     """
 
     VALID_SIGNALS = {"BUY", "OVERWEIGHT", "HOLD", "UNDERWEIGHT", "SELL"}
+    _RATING_LABEL_RE = re.compile(
+        r"\brating\**\s*[:\-]\s*\**(buy|overweight|hold|underweight|sell)\b",
+        re.IGNORECASE,
+    )
 
     def __init__(
         self,
@@ -54,10 +59,11 @@ class SignalMapper:
         """
         Convert a raw signal string to an OrderInstruction.
 
-        Accepts any casing; strips surrounding whitespace.
+        Accepts any casing, exact 5-tier values, and explicit "Rating: X"
+        decision markdown.
         Unknown signals are treated as HOLD to fail safe.
         """
-        normalized = signal.strip().upper()
+        normalized = self._normalize_signal(signal)
 
         if normalized == "BUY":
             return OrderInstruction(
@@ -102,6 +108,18 @@ class SignalMapper:
             allocation_fraction=0.0,
             reason=f"Unrecognised signal '{signal}' — skipping",
         )
+
+    def _normalize_signal(self, signal: str) -> str:
+        raw = (signal or "").strip()
+        exact = raw.strip("*:.,").upper()
+        if exact in self.VALID_SIGNALS:
+            return exact
+
+        match = self._RATING_LABEL_RE.search(raw)
+        if match:
+            return match.group(1).upper()
+
+        return exact
 
     def compute_buy_qty(
         self,

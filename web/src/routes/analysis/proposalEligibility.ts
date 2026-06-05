@@ -1,4 +1,6 @@
 const ACTIONABLE_SIGNALS = new Set(['BUY', 'OVERWEIGHT', 'UNDERWEIGHT', 'SELL']);
+const ALL_SIGNALS = new Set([...ACTIONABLE_SIGNALS, 'HOLD']);
+const RATING_LABEL_RE = /\brating\**\s*[:\-]\s*\**(buy|overweight|hold|underweight|sell)\b/i;
 
 export type ProposalEligibilityState = 'hidden' | 'waiting' | 'actionable' | 'no_action' | 'connect_account';
 
@@ -16,7 +18,12 @@ export type ProposalEligibility = {
 };
 
 export function normalizeProposalSignal(decision?: string | null): string {
-  return (decision ?? '').trim().toUpperCase();
+  const raw = (decision ?? '').trim();
+  const exact = raw.replace(/^[*:.,\s]+|[*:.,\s]+$/g, '').toUpperCase();
+  if (ALL_SIGNALS.has(exact)) return exact;
+
+  const match = raw.match(RATING_LABEL_RE);
+  return match ? match[1].toUpperCase() : exact;
 }
 
 export function proposalEligibility(input: ProposalEligibilityInput): ProposalEligibility {

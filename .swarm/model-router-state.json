@@ -1,0 +1,86 @@
+{
+  "totalDecisions": 0,
+  "modelDistribution": {
+    "haiku": 0,
+    "sonnet": 0,
+    "opus": 0,
+    "inherit": 0
+  },
+  "avgComplexity": 0.5,
+  "avgConfidence": 0.8,
+  "circuitBreakerTrips": 0,
+  "lastUpdated": "2026-06-05T14:59:49.330Z",
+  "learningHistory": [
+    {
+      "task": "Diagnose and fix inability to generate a trade proposal from a TradingAgents analysis recommendation",
+      "model": "sonnet",
+      "complexity": 0.2969285714285714,
+      "outcome": "success",
+      "timestamp": "2026-06-05T14:47:16.425Z"
+    },
+    {
+      "task": "Fix order cancellation not responding after submitted but unfilled trade orders; route desktop local",
+      "model": "sonnet",
+      "complexity": 0.35864155844155843,
+      "outcome": "success",
+      "timestamp": "2026-06-05T14:59:49.330Z"
+    }
+  ],
+  "version": 2,
+  "priors": {
+    "low": {
+      "haiku": {
+        "alpha": 1,
+        "beta": 1
+      },
+      "sonnet": {
+        "alpha": 2.4,
+        "beta": 1.6
+      },
+      "opus": {
+        "alpha": 1,
+        "beta": 1
+      },
+      "inherit": {
+        "alpha": 1,
+        "beta": 1
+      }
+    },
+    "med": {
+      "haiku": {
+        "alpha": 1,
+        "beta": 1
+      },
+      "sonnet": {
+        "alpha": 1,
+        "beta": 1
+      },
+      "opus": {
+        "alpha": 1,
+        "beta": 1
+      },
+      "inherit": {
+        "alpha": 1,
+        "beta": 1
+      }
+    },
+    "high": {
+      "haiku": {
+        "alpha": 1,
+        "beta": 1
+      },
+      "sonnet": {
+        "alpha": 1,
+        "beta": 1
+      },
+      "opus": {
+        "alpha": 1,
+        "beta": 1
+      },
+      "inherit": {
+        "alpha": 1,
+        "beta": 1
+      }
+    }
+  }
+}

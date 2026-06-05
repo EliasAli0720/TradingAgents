@@ -23,8 +23,8 @@ declare global {
         discover(host?: string): Promise<{ candidates: BrokerCandidate[] }>;
         connect(opts: ConnectOpts): Promise<BrokerStatus>;
         disconnect(): Promise<{ ok: boolean } | void>;
-        account(): Promise<BrokerAccount>;
-        positions(): Promise<BrokerPosition[]>;
+        account(accountId?: string): Promise<BrokerAccount>;
+        positions(accountId?: string): Promise<BrokerPosition[]>;
         orders(): Promise<BrokerOrder[]>;
         quote(ticker: string): Promise<{ ticker: string; price: number }>;
         preview(req: OrderReq): Promise<PreviewResult>;

@@ -52,7 +52,17 @@ def _login(client: TestClient, username: str, password: str) -> str:
 _t0 = datetime(2026, 5, 1, 14, 30, tzinfo=timezone.utc)
 
 
-def _seed_order(Session, user_id, account_id, side, qty, price, ticker="AAPL", seq=0):
+def _seed_order(
+    Session,
+    user_id,
+    account_id,
+    side,
+    qty,
+    price,
+    ticker="AAPL",
+    seq=0,
+    broker="ibkr",
+):
     with Session() as s:
         when = _t0 + timedelta(minutes=seq)
         s.add(
@@ -60,6 +70,7 @@ def _seed_order(Session, user_id, account_id, side, qty, price, ticker="AAPL", s
                 broker_order_id=f"ord-{uuid4().hex[:8]}",
                 requested_by_user_id=user_id,
                 account_id=account_id,
+                broker=broker,
                 ticker=ticker,
                 side=side,
                 order_type="market",
@@ -138,6 +149,20 @@ def test_account_segmentation():
     assert other["trades"] == [] and other["closed"] == []
     perf = client.get("/broker/performance", params={"account_id": OTHER}).json()
     assert perf["total_trades"] == 0
+
+
+def test_broker_segmentation_for_same_account_id():
+    app, Session = _make_app()
+    client = TestClient(app)
+    uid = _login(client, "alice", "hunter22a")
+    _seed_order(Session, uid, ACC, "buy", 10, 100.0, ticker="AAPL", seq=0, broker="ibkr")
+    _seed_order(Session, uid, ACC, "sell", 10, 120.0, ticker="AAPL", seq=1, broker="ibkr")
+    _seed_order(Session, uid, ACC, "buy", 2, 300.0, ticker="NVDA", seq=2, broker="webull")
+    _seed_order(Session, uid, ACC, "sell", 2, 330.0, ticker="NVDA", seq=3, broker="webull")
+
+    webull = client.get("/broker/trades", params={"account_id": ACC, "broker": "webull"}).json()
+    assert [row["ticker"] for row in webull["trades"]] == ["NVDA", "NVDA"]
+    assert webull["closed"][0]["realized_pnl"] == 60.0
 
 
 def test_user_segmentation():

@@ -344,6 +344,16 @@ class LocalIBKRConnection:
             conid=c.conId or None,
         )
 
+    @staticmethod
+    def _trade_order_ids(trade) -> set[str]:
+        order = trade.order
+        ids = set()
+        for attr in ("permId", "orderId"):
+            value = getattr(order, attr, None)
+            if value:
+                ids.add(str(value))
+        return ids
+
     def what_if(
         self,
         symbol: str,
@@ -405,8 +415,9 @@ class LocalIBKRConnection:
     def cancel(self, order_id: str) -> bool:
         self.ensure_connected()
         ib = self._client()
+        target = str(order_id)
         for trade in ib.openTrades():
-            if str(trade.order.permId or trade.order.orderId) == str(order_id):
+            if target in self._trade_order_ids(trade):
                 ib.cancelOrder(trade.order)
                 return True
         return False
@@ -414,8 +425,9 @@ class LocalIBKRConnection:
     def order(self, order_id: str) -> Optional[RawOrder]:
         self.ensure_connected()
         ib = self._client()
+        target = str(order_id)
         for trade in ib.trades():
-            if str(trade.order.permId or trade.order.orderId) == str(order_id):
+            if target in self._trade_order_ids(trade):
                 return self._trade_to_raw(trade)
         return None
 
