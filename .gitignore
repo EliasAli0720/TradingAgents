@@ -225,3 +225,13 @@ __marimo__/
 
 # Generated analysis reports
 reports/
+
+# macOS
+.DS_Store
+
+# Node / frontend tooling (web app uses pnpm in web/)
+node_modules/
+package-lock.json
+
+# Webull SDK runtime logs (rotated; *.log only matches .log suffix)
+webull_trade_sdk.log*
