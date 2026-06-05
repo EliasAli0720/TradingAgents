@@ -160,7 +160,7 @@ export default function AnalysisDetailPage() {
           {propose.isSuccess && (
             <span className="text-sm text-success">
               {t('broker.proposal.created')}{' '}
-              <Link to="/broker/approvals" className="text-[#ff4b4b]">{t('nav.approvals')}</Link>
+              <Link to="/broker/approvals" className="text-brandGold">{t('nav.approvals')}</Link>
             </span>
           )}
           {propose.isError && (

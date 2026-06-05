@@ -100,7 +100,7 @@ export default function AnalysisNewPage() {
         {error && (
           <div className="text-sm text-danger">
             {error.status} · {error.detail}
-            {error.status === 409 && <> · <a href="/settings/model" className="text-[#ff4b4b]">{t('analysis.configure_model')}</a></>}
+            {error.status === 409 && <> · <a href="/settings/model" className="text-brandGold">{t('analysis.configure_model')}</a></>}
           </div>
         )}
 

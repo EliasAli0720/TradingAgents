@@ -103,14 +103,14 @@ export default function WebullConnectCard() {
           <div className="inline-flex overflow-hidden rounded-md border border-border">
             <button
               type="button"
-              className={`px-3 py-1.5 text-sm ${mode === 'api_key' ? 'bg-[#ff4b4b] text-white' : 'text-muted hover:bg-white/5'}`}
+              className={`px-3 py-1.5 text-sm ${mode === 'api_key' ? 'bg-brandGold text-bg' : 'text-muted hover:bg-brandGold/10'}`}
               onClick={() => setMode('api_key')}
             >
               {t('broker.webull.mode.apiKey')}
             </button>
             <button
               type="button"
-              className={`px-3 py-1.5 text-sm border-l border-border ${mode === 'oauth' ? 'bg-[#ff4b4b] text-white' : 'text-muted hover:bg-white/5'}`}
+              className={`px-3 py-1.5 text-sm border-l border-border ${mode === 'oauth' ? 'bg-brandGold text-bg' : 'text-muted hover:bg-brandGold/10'}`}
               onClick={() => setMode('oauth')}
             >
               {t('broker.webull.mode.oauth')}

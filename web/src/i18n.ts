@@ -4,9 +4,10 @@
 type Lang = 'zh' | 'en';
 
 const DICT: Record<string, { zh: string; en: string }> = {
-  'app.page_title':           { zh: 'TradingAgents 仪表盘', en: 'TradingAgents Dashboard' },
-  'app.title':                { zh: '📈 TradingAgents 自动交易仪表盘', en: '📈 TradingAgents Auto-Trading Dashboard' },
-  'app.sidebar.title':        { zh: 'TradingAgents 机器人', en: 'TradingAgents Bot' },
+  'app.page_title':           { zh: 'AI黄财神 仪表盘', en: 'AI Huang Caishen Dashboard' },
+  'app.title':                { zh: 'AI黄财神 自动交易仪表盘', en: 'AI Huang Caishen Trading Dashboard' },
+  'app.sidebar.title':        { zh: 'AI黄财神', en: 'AI Huang Caishen' },
+  'app.sidebar.product_tagline': { zh: '智能研究 · 纪律执行', en: 'Intelligent research. Disciplined execution.' },
   'app.sidebar.last_refresh': { zh: '最近刷新：{time}', en: 'Last refresh: {time}' },
   'app.sidebar.mode_paper':   { zh: '模拟', en: 'PAPER' },
   'app.sidebar.mode_live':    { zh: '实盘', en: 'LIVE' },

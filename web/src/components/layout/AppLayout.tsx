@@ -18,11 +18,13 @@ export default function AppLayout() {
   }, [user?.language]);
 
   return (
-    <div className="h-full flex relative">
+    <div className="h-full flex relative bg-bg text-text">
       <Sidebar />
-      <main className="flex-1 overflow-auto p-8 bg-bg">
-        <PageTitle>{t('app.title')}</PageTitle>
-        <Outlet />
+      <main className="flex-1 overflow-auto bg-[radial-gradient(circle_at_top_right,rgba(221,170,83,0.12),transparent_34%),linear-gradient(180deg,#092E24_0%,#051A10_38%)]">
+        <div className="min-h-full p-8">
+          <PageTitle>{t('app.title')}</PageTitle>
+          <Outlet />
+        </div>
       </main>
 
       {/* Floating settings button, top-right */}

@@ -31,9 +31,23 @@ const GROUPS: { title: string; items: Item[] }[] = [
 
 export default function Sidebar() {
   return (
-    <aside className="w-72 shrink-0 h-full overflow-y-auto bg-panel border-r border-border p-4 text-sm">
-      {/* Title */}
-      <div className="font-bold">{t('app.sidebar.title')}</div>
+    <aside className="w-72 shrink-0 h-full overflow-y-auto bg-panel border-r border-border p-4 text-sm shadow-2xl shadow-black/20">
+      <div className="flex items-center gap-3 rounded-lg border border-brandGold/30 bg-[linear-gradient(145deg,#F7F4EA_0%,#EEF0E7_58%,#C6CDBF_100%)] p-3 shadow-md shadow-black/10">
+        <img
+          src="/brand/icon.png"
+          alt=""
+          className="h-12 w-12 shrink-0 rounded-md object-cover ring-1 ring-brandGold/45"
+          aria-hidden="true"
+        />
+        <div className="min-w-0">
+          <img
+            src="/brand/logo.png"
+            alt={t('app.sidebar.title')}
+            className="h-8 max-w-[11.5rem] object-contain object-left"
+          />
+          <div className="mt-1 text-xs text-[#3B563F]">{t('app.sidebar.product_tagline')}</div>
+        </div>
+      </div>
 
       {/* Mode pill — reflects the connected broker account (mock / real) */}
       <div className="my-3">

@@ -59,7 +59,7 @@ export default function AdminRunsPage() {
                 <td><StatusBadge status={r.status} /></td>
                 <td className="text-muted">{r.created_at}</td>
                 <td className="text-muted">{r.finished_at ?? '—'}</td>
-                <td><Link to={`/analysis/${r.run_id}`} className="text-[#ff4b4b]">{t('table.details')}</Link></td>
+                <td><Link to={`/analysis/${r.run_id}`} className="text-brandGold">{t('table.details')}</Link></td>
               </tr>
             ))}
             {q.data?.length === 0 && (

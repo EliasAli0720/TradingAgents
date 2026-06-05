@@ -4,11 +4,11 @@
 import { t, getLang } from '@/i18n';
 
 const SIGNAL_COLORS: Record<string, { fg: string; bg: string }> = {
-  BUY:         { fg: '#4CAF50', bg: '#1b2a1d' },
-  OVERWEIGHT:  { fg: '#4CAF50', bg: '#1b2a1d' },
-  HOLD:        { fg: '#37474F', bg: '#1c2126' },
-  UNDERWEIGHT: { fg: '#FFB300', bg: '#2a2417' },
-  SELL:        { fg: '#F44336', bg: '#2a1818' },
+  BUY:         { fg: '#2E8B57', bg: '#0B2E1C' },
+  OVERWEIGHT:  { fg: '#2E8B57', bg: '#0B2E1C' },
+  HOLD:        { fg: '#C6CDBF', bg: '#14251D' },
+  UNDERWEIGHT: { fg: '#DDAA53', bg: '#2F2612' },
+  SELL:        { fg: '#C64B4B', bg: '#311A1A' },
 };
 
 function pick(re: RegExp, ...sources: (string | undefined)[]): string | null {
@@ -53,14 +53,14 @@ export default function DecisionCard({ inputs }: { inputs: DecisionInputs }) {
     <div
       className="rounded-lg border-2 p-5 mb-5"
       style={{
-        background: color?.bg ?? '#1c2126',
-        borderColor: color?.fg ?? '#37474F',
+        background: color?.bg ?? '#14251D',
+        borderColor: color?.fg ?? '#C6CDBF',
       }}
     >
       <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
         <div>
           <div className="text-xs uppercase tracking-widest text-muted">{t('decision.final_signal')}</div>
-          <div className="text-3xl font-bold" style={{ color: color?.fg ?? '#fafafa' }}>
+          <div className="text-3xl font-bold" style={{ color: color?.fg ?? '#F7F4EA' }}>
             {rating || '—'}
           </div>
         </div>
@@ -88,7 +88,7 @@ function Field({ label, value, color }: { label: string; value: string; color?: 
   return (
     <div>
       <div className="text-xs uppercase tracking-widest text-muted">{label}</div>
-      <div className="text-base font-semibold" style={{ color: color ?? '#fafafa' }}>{value}</div>
+      <div className="text-base font-semibold" style={{ color: color ?? '#F7F4EA' }}>{value}</div>
     </div>
   );
 }

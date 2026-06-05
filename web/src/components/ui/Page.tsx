@@ -13,7 +13,7 @@ export function Caption({ children }: { children: React.ReactNode }) {
 
 export function Info({ children }: { children: React.ReactNode }) {
   return (
-    <div className="card text-sm border-l-4 border-info" style={{ borderLeftColor: '#2196F3' }}>
+    <div className="card text-sm border-l-4 border-info" style={{ borderLeftColor: '#DDAA53' }}>
       {children}
     </div>
   );

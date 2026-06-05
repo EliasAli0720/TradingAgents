@@ -80,7 +80,7 @@ export default function RecommendationsPage() {
     // Poll while any item still has an in-flight run so the page reflects
     // queued → running → succeeded/failed instead of staying stuck.
     refetchInterval: (query) => {
-      const items = query.state.data?.items ?? [];
+      const items = Array.isArray(query.state.data?.items) ? query.state.data.items : [];
       const anyLive = items.some(
         (item) => item.run_status != null && LIVE_RUN_STATUSES.has(item.run_status),
       );
@@ -89,7 +89,9 @@ export default function RecommendationsPage() {
   });
 
   useEffect(() => {
-    if (watchlist.data) setWatchlistText(watchlist.data.tickers.join(', '));
+    if (watchlist.data) {
+      setWatchlistText(Array.isArray(watchlist.data.tickers) ? watchlist.data.tickers.join(', ') : '');
+    }
   }, [watchlist.data]);
 
   useEffect(() => {
@@ -128,6 +130,7 @@ export default function RecommendationsPage() {
   });
 
   const batch = activeBatch.data;
+  const batchSummaries = Array.isArray(batches.data) ? batches.data : [];
   const selectedIds = useMemo(
     () =>
       Object.entries(selected)
@@ -204,7 +207,7 @@ export default function RecommendationsPage() {
           {actionError.status === 409 && /model/i.test(actionError.detail ?? '') ? (
             <span>
               {t('recommendations.err_model_required')}
-              <Link to="/settings/model" className="text-[#ff4b4b] ml-2">
+              <Link to="/settings/model" className="text-brandGold ml-2">
                 {t('analysis.configure_model')}
               </Link>
             </span>
@@ -230,7 +233,7 @@ export default function RecommendationsPage() {
           )}
         </div>
         <History
-          batches={batches.data ?? []}
+          batches={batchSummaries}
           activeBatchId={activeBatchId}
           setActiveBatchId={setActiveBatchId}
           loading={batches.isLoading}
@@ -252,7 +255,7 @@ function AnalyzeResult({ response }: { response: { created: { item_id: string; t
               <div key={row.item_id} className="text-success">
                 <span className="font-mono">{row.ticker}</span>
                 {' -> '}
-                <Link to={`/analysis/${row.run_id}`} className="text-[#ff4b4b]">
+                <Link to={`/analysis/${row.run_id}`} className="text-brandGold">
                   {row.run_id}
                 </Link>
               </div>
@@ -286,6 +289,7 @@ function CurrentBatch({
   setSelected: Dispatch<SetStateAction<Record<string, boolean>>>;
 }) {
   if (!batch) return <div className="card text-muted text-sm">{t('common.empty')}</div>;
+  const items = Array.isArray(batch.items) ? batch.items : [];
 
   return (
     <section className="card overflow-x-auto">
@@ -302,7 +306,7 @@ function CurrentBatch({
           </tr>
         </thead>
         <tbody>
-          {batch.items.map((item) => (
+          {items.map((item) => (
             <tr key={item.item_id}>
               <td>
                 <input
@@ -335,7 +339,7 @@ function CurrentBatch({
               </td>
               <td>
                 {item.run_id ? (
-                  <Link to={`/analysis/${item.run_id}`} className="text-[#ff4b4b]">
+                  <Link to={`/analysis/${item.run_id}`} className="text-brandGold">
                     {item.run_id}
                   </Link>
                 ) : (
@@ -344,7 +348,7 @@ function CurrentBatch({
               </td>
             </tr>
           ))}
-          {batch.items.length === 0 && (
+          {items.length === 0 && (
             <tr>
               <td colSpan={7} className="py-4 text-muted text-center">{t('common.empty')}</td>
             </tr>
@@ -381,7 +385,7 @@ function History({
             <button
               key={batch.batch_id}
               type="button"
-              className={`btn-ghost btn-block justify-start ${activeBatchId === batch.batch_id ? 'border-[#ff4b4b]' : ''}`}
+              className={`btn-ghost btn-block justify-start ${activeBatchId === batch.batch_id ? 'border-brandGold' : ''}`}
               onClick={() => setActiveBatchId(batch.batch_id)}
             >
               <span className="text-left min-w-0">

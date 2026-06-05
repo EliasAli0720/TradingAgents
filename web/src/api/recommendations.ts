@@ -49,6 +49,17 @@ export type AnalyzeRecommendationsResponse = {
   failed: { item_id: string; ticker?: string | null; detail: string }[];
 };
 
+function normalizeList<T>(value: unknown, keys: string[]): T[] {
+  if (Array.isArray(value)) return value as T[];
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    for (const key of keys) {
+      if (Array.isArray(record[key])) return record[key] as T[];
+    }
+  }
+  return [];
+}
+
 export const recommendationsApi = {
   async watchlist(): Promise<Watchlist> {
     const { data } = await http.get<Watchlist>('/recommendations/watchlist');
@@ -66,8 +77,8 @@ export const recommendationsApi = {
     return data;
   },
   async batches(): Promise<RecommendationBatchSummary[]> {
-    const { data } = await http.get<RecommendationBatchSummary[]>('/recommendations/batches');
-    return data;
+    const { data } = await http.get<unknown>('/recommendations/batches');
+    return normalizeList<RecommendationBatchSummary>(data, ['batches', 'items', 'results']);
   },
   async batch(batchId: string): Promise<RecommendationBatch> {
     const { data } = await http.get<RecommendationBatch>(`/recommendations/batches/${encodeURIComponent(batchId)}`);

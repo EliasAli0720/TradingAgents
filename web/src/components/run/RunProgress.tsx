@@ -64,7 +64,7 @@ export default function RunProgress({
         <div
           className={clsx(
             'h-full transition-all duration-500',
-            status === 'failed' ? 'bg-danger' : status === 'cancelled' ? 'bg-muted' : status === 'cancelling' ? 'bg-warn' : 'bg-[#ff4b4b]',
+            status === 'failed' ? 'bg-danger' : status === 'cancelled' ? 'bg-muted' : status === 'cancelling' ? 'bg-warn' : 'bg-brandGold',
           )}
           style={{ width: `${percent}%` }}
         />
@@ -79,8 +79,8 @@ export default function RunProgress({
               key={stage.key}
               className={clsx(
                 'rounded-md border px-3 py-2 min-h-16',
-                done ? 'border-[#ff4b4b]/70 bg-[#ff4b4b]/10' : 'border-border bg-bg/30',
-                active && 'ring-1 ring-[#ff4b4b]',
+                done ? 'border-brandGold/70 bg-brandGold/10' : 'border-border bg-bg/30',
+                active && 'ring-1 ring-brandGold',
               )}
             >
               <div className={clsx('text-xs uppercase text-muted', done && 'text-text/80')}>

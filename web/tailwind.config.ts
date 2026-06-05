@@ -1,36 +1,38 @@
 import type { Config } from 'tailwindcss';
 
-// Palette mirrors Streamlit dark theme + docs/ui-guidelines.md semantic colors.
+// Palette follows AI_Huang_Caishen_Brand_Guidelines.md.
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   darkMode: 'class',
   theme: {
     extend: {
       colors: {
-        // Streamlit dark theme
-        bg: '#0e1117',
-        panel: '#262730',
-        border: '#3a3d46',
-        muted: '#a3a8b8',
-        text: '#fafafa',
-        // Semantic (ui-guidelines.md §5)
-        success: '#4CAF50',
-        successBg: '#1b2a1d',
-        danger: '#F44336',
-        dangerBg: '#2a1818',
-        info: '#2196F3',
-        infoBg: 'rgba(33,150,243,0.08)',
-        warn: '#FFB300',
-        warnBg: '#2a2417',
-        neutral: '#37474F',
-        neutralBg: '#1c2126',
+        bg: '#051A10',
+        panel: '#092E24',
+        border: '#24493C',
+        muted: '#C6CDBF',
+        text: '#F7F4EA',
+        brandGreen: '#0C3D2F',
+        brandGold: '#DDAA53',
+        brandGoldDark: '#C08933',
+        brandGoldLight: '#F4D98B',
+        success: '#2E8B57',
+        successBg: '#0B2E1C',
+        danger: '#C64B4B',
+        dangerBg: '#311A1A',
+        info: '#DDAA53',
+        infoBg: 'rgba(221,170,83,0.12)',
+        warn: '#F4D98B',
+        warnBg: '#2F2612',
+        neutral: '#3B563F',
+        neutralBg: '#14251D',
         research: '#7B1FA2',
         risk: '#0D47A1',
       },
       fontFamily: {
         sans: [
-          '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"',
-          'Roboto', '"Helvetica Neue"', 'sans-serif',
+          'Manrope', '"Noto Sans SC"', '"PingFang SC"', '"Microsoft YaHei"',
+          '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'sans-serif',
         ],
         mono: [
           'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco',
