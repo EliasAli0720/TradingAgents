@@ -37,6 +37,7 @@ class PortfolioRepository:
             .where(
                 BrokerOrder.requested_by_user_id == self.user_id,
                 BrokerOrder.account_id == self.account_id,
+                BrokerOrder.broker == self.broker,
                 BrokerOrder.filled_qty > 0,
             )
             .order_by(asc(BrokerOrder.submitted_at), asc(BrokerOrder.updated_at))

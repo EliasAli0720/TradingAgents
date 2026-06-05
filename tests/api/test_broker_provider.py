@@ -216,6 +216,7 @@ def test_status_for_reports_webull_connected(Session):
         assert out["broker"] == "webull"
         assert out["connected"] is True
         assert out["account_id"] == "DU1"
+        assert out["accounts"] == ["DU1"]
 
 
 def test_status_for_reports_api_key_credential_connected(Session):
@@ -225,3 +226,4 @@ def test_status_for_reports_api_key_credential_connected(Session):
         assert out["broker"] == "webull"
         assert out["connected"] is True
         assert out["account_id"] == "DUKEY"
+        assert out["accounts"] == ["DUKEY"]

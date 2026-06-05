@@ -151,6 +151,28 @@ def ensure_additive_schema(db_engine) -> None:
                         )
                     )
 
+    if "trade_approvals" in table_names:
+        approval_columns = {
+            column["name"] for column in inspector.get_columns("trade_approvals")
+        }
+        if "proposal_report" not in approval_columns:
+            json_type = "JSONB" if db_engine.dialect.name == "postgresql" else "JSON"
+            with db_engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "ALTER TABLE trade_approvals ADD COLUMN "
+                        f"proposal_report {json_type}"
+                    )
+                )
+
+    if "broker_orders" in table_names:
+        order_columns = {column["name"] for column in inspector.get_columns("broker_orders")}
+        if "broker" not in order_columns:
+            with db_engine.begin() as connection:
+                connection.execute(
+                    text("ALTER TABLE broker_orders ADD COLUMN broker VARCHAR NOT NULL DEFAULT 'ibkr'")
+                )
+
     if "user_model_settings" not in table_names:
         return
 

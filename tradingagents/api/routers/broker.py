@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from tradingagents.api.broker_repository import BrokerRepository
@@ -46,6 +46,7 @@ class BrokerStatusResponse(BaseModel):
     gateway_online: bool
     brokerage_session: bool
     account_id: Optional[str]
+    accounts: list[str] = Field(default_factory=list)
     paper: bool
     last_refresh_at: Optional[str]
     last_error: Optional[str]
@@ -72,6 +73,7 @@ class PositionResponse(BaseModel):
 class OrderResponse(BaseModel):
     broker_order_id: str
     account_id: Optional[str] = None
+    broker: str = "ibkr"
     ticker: str
     side: str
     order_type: str
@@ -100,6 +102,7 @@ class ApprovalResponse(BaseModel):
     whatif_commission: Optional[float]
     risk_verdict: Optional[dict[str, Any]]
     agent_reasoning: Optional[str]
+    proposal_report: Optional[dict[str, Any]]
     status: str
     requested_by_user_id: str
     approved_by_user_id: Optional[str]
@@ -187,6 +190,7 @@ class ExecutedRequest(BaseModel):
     filled_avg_price: Optional[float] = None
     limit_price: Optional[float] = None
     account_id: Optional[str] = None
+    broker: str = "ibkr"
 
 
 class OrderStatusRequest(BaseModel):
@@ -207,6 +211,7 @@ class SnapshotRequest(BaseModel):
 class ManualOrderRequest(BaseModel):
     broker_order_id: str
     account_id: str
+    broker: str = "ibkr"
     ticker: str
     side: str
     order_type: str = "market"
@@ -306,6 +311,60 @@ def _iso(value) -> Optional[str]:
     return value.isoformat() if value is not None else None
 
 
+def _broker_name(broker) -> str:
+    name = broker.__class__.__name__.lower()
+    if "webull" in name:
+        return "webull"
+    if "ibkr" in name:
+        return "ibkr"
+    return getattr(broker, "broker", None) or "ibkr"
+
+
+def _broker_account_id(broker) -> Optional[str]:
+    account_id = getattr(broker, "_account_id", None)
+    if account_id:
+        return account_id
+    try:
+        health = broker.health()
+    except Exception:  # noqa: BLE001 - account id is metadata
+        return None
+    account_id = health.get("account_id")
+    if account_id:
+        return account_id
+    accounts = health.get("accounts") or []
+    return accounts[0] if accounts else None
+
+
+def _broker_for_account(broker, account_id: Optional[str]):
+    if not account_id:
+        return broker
+    if getattr(broker, "_account_id", None) == account_id:
+        return broker
+
+    conn = getattr(broker, "_conn", None)
+    if conn is not None and broker.__class__.__name__ == "IBKRBroker":
+        from tradingbot.broker.ibkr import IBKRBroker
+
+        return IBKRBroker(
+            conn,
+            account_id=account_id,
+            paper=bool(getattr(broker, "_paper", True)),
+        )
+
+    client = getattr(broker, "_client", None)
+    if client is not None and broker.__class__.__name__ == "WebullBroker":
+        from tradingbot.broker.webull import WebullBroker
+
+        return WebullBroker(
+            client,
+            account_id=account_id,
+            region=str(getattr(broker, "_region", "us")),
+            paper=bool(getattr(broker, "_paper", False)),
+        )
+
+    return broker
+
+
 def _approval_resp(a) -> ApprovalResponse:
     return ApprovalResponse(
         approval_id=a.approval_id,
@@ -322,6 +381,7 @@ def _approval_resp(a) -> ApprovalResponse:
         whatif_commission=a.whatif_commission,
         risk_verdict=a.risk_verdict,
         agent_reasoning=a.agent_reasoning,
+        proposal_report=a.proposal_report,
         status=a.status,
         requested_by_user_id=a.requested_by_user_id,
         approved_by_user_id=a.approved_by_user_id,
@@ -336,6 +396,7 @@ def _order_resp(o) -> OrderResponse:
     return OrderResponse(
         broker_order_id=o.broker_order_id,
         account_id=o.account_id,
+        broker=o.broker,
         ticker=o.ticker,
         side=o.side,
         order_type=o.order_type,
@@ -369,8 +430,8 @@ def broker_status(
 
 
 @router.get("/account", response_model=AccountResponse)
-def broker_account(broker=Depends(get_broker)):
-    acct = broker.get_account()
+def broker_account(account_id: Optional[str] = None, broker=Depends(get_broker)):
+    acct = _broker_for_account(broker, account_id).get_account()
     return AccountResponse(
         cash=acct.cash,
         portfolio_value=acct.portfolio_value,
@@ -380,7 +441,7 @@ def broker_account(broker=Depends(get_broker)):
 
 
 @router.get("/positions", response_model=list[PositionResponse])
-def broker_positions(broker=Depends(get_broker)):
+def broker_positions(account_id: Optional[str] = None, broker=Depends(get_broker)):
     return [
         PositionResponse(
             ticker=p.ticker,
@@ -392,7 +453,7 @@ def broker_positions(broker=Depends(get_broker)):
             unrealized_pnl_pct=p.unrealized_pnl_pct,
             side=p.side,
         )
-        for p in broker.get_positions()
+        for p in _broker_for_account(broker, account_id).get_positions()
     ]
 
 
@@ -402,8 +463,12 @@ def broker_positions(broker=Depends(get_broker)):
 
 
 @router.get("/orders", response_model=list[OrderResponse])
-def list_orders(repo: BrokerRepository = Depends(get_broker_repo)):
-    return [_order_resp(o) for o in repo.list_orders()]
+def list_orders(
+    account_id: Optional[str] = None,
+    broker: Optional[str] = None,
+    repo: BrokerRepository = Depends(get_broker_repo),
+):
+    return [_order_resp(o) for o in repo.list_orders(account_id=account_id, broker=broker)]
 
 
 @router.get("/orders/{order_id}", response_model=OrderResponse)
@@ -458,15 +523,8 @@ def place_order(
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    account_id = getattr(broker, "_account_id", None)
-    try:
-        health = {} if account_id else broker.health()
-        account_id = account_id or health.get("account_id")
-        if not account_id:
-            accounts = health.get("accounts") or []
-            account_id = accounts[0] if accounts else None
-    except Exception:  # noqa: BLE001 - account id is metadata; order already placed
-        pass
+    account_id = _broker_account_id(broker)
+    broker_name = _broker_name(broker)
 
     mirrored = repo.upsert_order(
         broker_order_id=order.order_id,
@@ -478,6 +536,7 @@ def place_order(
         approval_id=None,
         requested_by_user_id=user.user_id,
         account_id=account_id,
+        broker=broker_name,
         limit_price=order.limit_price,
         filled_qty=order.filled_qty,
         filled_avg_price=order.filled_avg_price,
@@ -489,10 +548,32 @@ def place_order(
 @router.post("/orders/{order_id}/cancel", response_model=CancelResponse)
 def cancel_order(
     order_id: str,
+    session: Session = Depends(get_db_session),
     _user: User = Depends(require_role(*_TRADER_ROLES)),
+    repo: BrokerRepository = Depends(get_broker_repo),
     broker=Depends(get_broker),
 ):
-    return CancelResponse(cancelled=broker.cancel_order(order_id))
+    cancelled = broker.cancel_order(order_id)
+    if cancelled:
+        existing = repo.get_order(order_id)
+        if existing is not None:
+            repo.upsert_order(
+                broker_order_id=order_id,
+                ticker=existing.ticker,
+                side=existing.side,
+                order_type=existing.order_type,
+                quantity=existing.quantity,
+                status="cancelled",
+                approval_id=existing.approval_id,
+                requested_by_user_id=existing.requested_by_user_id,
+                account_id=existing.account_id,
+                broker=existing.broker,
+                limit_price=existing.limit_price,
+                filled_qty=existing.filled_qty,
+                filled_avg_price=existing.filled_avg_price,
+            )
+            session.commit()
+    return CancelResponse(cancelled=cancelled)
 
 
 # --------------------------------------------------------------------------- #
@@ -553,7 +634,6 @@ def approve_proposal(
     user: User = Depends(require_role(*_TRADER_ROLES)),
     repo: BrokerRepository = Depends(get_broker_repo),
     execution: TradeExecutionService = Depends(get_execution_service),
-    config: dict = Depends(get_config),
 ):
     try:
         repo.approve(approval_id, user.user_id)
@@ -567,7 +647,6 @@ def approve_proposal(
         repo=repo,
         approval_id=approval_id,
         actor_user_id=user.user_id,
-        account_id=config.get("ibkr_account_id") or None,
     )
     session.commit()
     return ApproveResponse(
@@ -702,6 +781,7 @@ def record_local_execution(
         approval_id=approval_id,
         requested_by_user_id=approval.requested_by_user_id,
         account_id=body.account_id,
+        broker=body.broker,
         limit_price=body.limit_price if body.limit_price is not None else approval.limit_price,
         filled_qty=body.filled_qty,
         filled_avg_price=body.filled_avg_price,
@@ -739,6 +819,7 @@ def record_manual_order(
         approval_id=None,
         requested_by_user_id=user.user_id,
         account_id=body.account_id,
+        broker=body.broker,
         limit_price=body.limit_price,
         filled_qty=body.filled_qty,
         filled_avg_price=body.filled_avg_price,
@@ -769,6 +850,7 @@ def update_local_order_status(
         approval_id=existing.approval_id,
         requested_by_user_id=existing.requested_by_user_id,
         account_id=existing.account_id,
+        broker=existing.broker,
         limit_price=existing.limit_price,
         filled_qty=body.filled_qty,
         filled_avg_price=body.filled_avg_price,

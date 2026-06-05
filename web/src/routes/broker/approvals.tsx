@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { brokerApi, type TradeApproval } from '@/api/broker';
+import { proposalReportRows, proposalReportSummary } from '@/api/proposalReport';
 import { approveProposal } from '@/api/tradeFlow';
 import { useAuth } from '@/hooks/useAuth';
 import { Subheader, Caption, ErrorBox } from '@/components/ui/Page';
@@ -65,6 +66,7 @@ export default function BrokerApprovalsPage() {
                 <th>{t('table.est_price')}</th>
                 <th>{t('table.est_value')}</th>
                 <th>{t('table.risk')}</th>
+                <th>{t('broker.proposal_report.title')}</th>
                 <th>{t('table.status')}</th>
                 <th></th>
               </tr>
@@ -78,6 +80,21 @@ export default function BrokerApprovalsPage() {
                   <td>{num(a.estimated_price)}</td>
                   <td>{num(a.estimated_value)}</td>
                   <td className="text-muted text-xs max-w-[16rem] truncate" title={riskReason(a)}>{riskReason(a)}</td>
+                  <td className="min-w-[18rem] max-w-[28rem]">
+                    <details>
+                      <summary className="cursor-pointer text-sm text-brandGold">
+                        {proposalReportSummary(a)}
+                      </summary>
+                      <dl className="mt-2 space-y-1 text-xs">
+                        {proposalReportRows(a).map((row) => (
+                          <div key={row.labelKey} className="grid grid-cols-[7rem_1fr] gap-2">
+                            <dt className="text-muted">{t(row.labelKey)}</dt>
+                            <dd className="whitespace-pre-wrap">{row.value}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </details>
+                  </td>
                   <td>
                     <span className={`badge ${STATUS_CLS[a.status] ?? 'bg-white/10'}`}>
                       {t(`broker.approval_status.${a.status}`)}
@@ -111,7 +128,7 @@ export default function BrokerApprovalsPage() {
               ))}
               {approvals.data?.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="py-4 text-muted text-center">{t('common.empty')}</td>
+                  <td colSpan={9} className="py-4 text-muted text-center">{t('common.empty')}</td>
                 </tr>
               )}
             </tbody>

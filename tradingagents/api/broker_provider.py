@@ -151,12 +151,14 @@ def status_for(
         return connection_service.status(broker_repo)
 
     connected = cred.status == CONNECTED and not _refresh_token_dead(cred)
+    accounts = [cred.account_id] if cred.account_id else []
     return {
         "broker": WEBULL,
         "connected": connected,
         "gateway_online": connected,
         "brokerage_session": connected,
         "account_id": cred.account_id,
+        "accounts": accounts,
         "paper": bool(config.get("paper_trading", True)),
         "last_refresh_at": cred.updated_at.isoformat() if cred.updated_at else None,
         "last_error": None if connected else f"webull {cred.status}",

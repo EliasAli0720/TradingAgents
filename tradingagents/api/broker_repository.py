@@ -64,6 +64,7 @@ class BrokerRepository:
         whatif_commission: Optional[float] = None,
         risk_verdict: Optional[dict[str, Any]] = None,
         agent_reasoning: Optional[str] = None,
+        proposal_report: Optional[dict[str, Any]] = None,
     ) -> TradeApproval:
         now = utcnow()
         approval = TradeApproval(
@@ -83,6 +84,7 @@ class BrokerRepository:
             whatif_commission=whatif_commission,
             risk_verdict=risk_verdict,
             agent_reasoning=agent_reasoning,
+            proposal_report=proposal_report,
             status=PENDING,
             created_at=now,
             updated_at=now,
@@ -174,6 +176,7 @@ class BrokerRepository:
         approval_id: Optional[str] = None,
         requested_by_user_id: Optional[str] = None,
         account_id: Optional[str] = None,
+        broker: str = "ibkr",
         conid: Optional[int] = None,
         limit_price: Optional[float] = None,
         time_in_force: str = "day",
@@ -190,6 +193,7 @@ class BrokerRepository:
                 approval_id=approval_id,
                 requested_by_user_id=requested_by_user_id,
                 account_id=account_id,
+                broker=broker,
                 ticker=ticker.upper(),
                 conid=conid,
                 side=side,
@@ -216,6 +220,10 @@ class BrokerRepository:
             order.approval_id = approval_id
         if requested_by_user_id is not None:
             order.requested_by_user_id = requested_by_user_id
+        if account_id is not None:
+            order.account_id = account_id
+        if broker:
+            order.broker = broker
         if raw_event is not None:
             order.raw_event = raw_event
         order.updated_at = now
@@ -227,10 +235,19 @@ class BrokerRepository:
             stmt = stmt.where(BrokerOrder.requested_by_user_id == self.user_id)
         return self.session.scalar(stmt)
 
-    def list_orders(self, limit: int = 100) -> list[BrokerOrder]:
+    def list_orders(
+        self,
+        limit: int = 100,
+        account_id: Optional[str] = None,
+        broker: Optional[str] = None,
+    ) -> list[BrokerOrder]:
         stmt = select(BrokerOrder)
         if self.user_id is not None:
             stmt = stmt.where(BrokerOrder.requested_by_user_id == self.user_id)
+        if account_id is not None:
+            stmt = stmt.where(BrokerOrder.account_id == account_id)
+        if broker is not None:
+            stmt = stmt.where(BrokerOrder.broker == broker)
         stmt = stmt.order_by(desc(BrokerOrder.updated_at)).limit(limit)
         return list(self.session.scalars(stmt))
 

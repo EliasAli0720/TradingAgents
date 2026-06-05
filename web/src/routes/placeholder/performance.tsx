@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { brokerApi } from '@/api/broker';
-import { useBrokerConnection } from '@/hooks/useBrokerConnection';
+import { useBrokerAccountContext } from '@/hooks/useBrokerAccountContext';
+import BrokerAccountSelector from '@/components/broker/BrokerAccountSelector';
 import { Subheader, Info, ErrorBox } from '@/components/ui/Page';
 import Metric, { KpiRow } from '@/components/ui/Metric';
 import { getLocale, t } from '@/i18n';
@@ -33,12 +34,13 @@ function Sparkline({ points }: { points: number[] }) {
 }
 
 export default function PerformancePage() {
-  const { status } = useBrokerConnection();
-  const accountId = status?.account_id ?? '';
+  const broker = useBrokerAccountContext();
+  const accountId = broker.selected?.account_id ?? '';
+  const brokerName = broker.selected?.broker ?? 'ibkr';
 
   const q = useQuery({
-    queryKey: ['perf', accountId],
-    queryFn: () => brokerApi.performance(accountId),
+    queryKey: ['perf', brokerName, accountId],
+    queryFn: () => brokerApi.performance(accountId, brokerName),
     enabled: !!accountId,
     refetchInterval: 30000,
   });
@@ -47,6 +49,13 @@ export default function PerformancePage() {
     return (
       <div>
         <Subheader>{t('nav.performance')}</Subheader>
+        <div className="mb-3">
+          <BrokerAccountSelector
+            options={broker.options}
+            selectedKey={broker.selectedKey}
+            onChange={broker.setSelectedKey}
+          />
+        </div>
         <Info>{t('broker.not_connected_generic')}</Info>
       </div>
     );
@@ -58,6 +67,13 @@ export default function PerformancePage() {
   return (
     <div>
       <Subheader>{t('nav.performance')}</Subheader>
+      <div className="mb-3">
+        <BrokerAccountSelector
+          options={broker.options}
+          selectedKey={broker.selectedKey}
+          onChange={broker.setSelectedKey}
+        />
+      </div>
 
       {q.isLoading ? (
         <div className="text-muted">{t('common.loading')}</div>

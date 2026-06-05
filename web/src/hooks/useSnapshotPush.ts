@@ -1,37 +1,33 @@
 import { useEffect, useRef } from 'react';
 import { brokerApi } from '@/api/broker';
-import { getBrokerChannel } from '@/api/brokerChannel';
-import { useBrokerConnection } from './useBrokerConnection';
+import { useBrokerAccountContext } from './useBrokerAccountContext';
 
 // While a broker account is connected, periodically push the live account
 // equity to the server so the per-(user, account) equity curve / Sharpe /
 // drawdown have a time series. One row per (user, account, day), updated to the
 // latest value. Best-effort: failures are swallowed.
 export function useSnapshotPush() {
-  const { status, tradingEnabled } = useBrokerConnection();
-  const accountId = status?.account_id ?? '';
-  const broker = status?.broker ?? 'ibkr';
+  const { account, positions, selected } = useBrokerAccountContext();
   const busy = useRef(false);
 
   useEffect(() => {
-    if (!tradingEnabled || !accountId) return;
-    const channel = getBrokerChannel();
+    if (!selected) return;
     let cancelled = false;
 
     const push = async () => {
       if (busy.current) return;
       busy.current = true;
       try {
-        const [acct, positions] = await Promise.all([channel.account(), channel.positions()]);
+        const [acct, currentPositions] = await Promise.all([account(), positions()]);
         if (cancelled) return;
-        const invested = positions.reduce((s, p) => s + p.market_value, 0);
+        const invested = currentPositions.reduce((s, p) => s + p.market_value, 0);
         await brokerApi.pushSnapshot({
-          account_id: accountId,
-          broker,
+          account_id: selected.account_id,
+          broker: selected.broker,
           cash: acct.cash,
           invested_value: invested,
           total_value: acct.equity || acct.portfolio_value,
-          open_positions: positions.length,
+          open_positions: currentPositions.length,
         });
       } catch {
         /* best effort */
@@ -46,5 +42,5 @@ export function useSnapshotPush() {
       cancelled = true;
       clearInterval(id);
     };
-  }, [tradingEnabled, accountId, broker]);
+  }, [account, positions, selected?.account_id, selected?.broker, selected?.key]);
 }

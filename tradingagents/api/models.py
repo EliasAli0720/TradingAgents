@@ -398,6 +398,7 @@ class TradeApproval(Base):
     whatif_commission: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     risk_verdict: Mapped[Optional[dict[str, Any]]] = mapped_column(JsonType, nullable=True)
     agent_reasoning: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    proposal_report: Mapped[Optional[dict[str, Any]]] = mapped_column(JsonType, nullable=True)
     status: Mapped[str] = mapped_column(
         String, nullable=False, default="pending", index=True
     )
@@ -440,6 +441,9 @@ class BrokerOrder(Base):
         String, nullable=True, index=True
     )
     account_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    broker: Mapped[str] = mapped_column(
+        String, nullable=False, default="ibkr", server_default=text("'ibkr'")
+    )
     ticker: Mapped[str] = mapped_column(String, nullable=False)
     conid: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     side: Mapped[str] = mapped_column(String, nullable=False)
@@ -458,7 +462,10 @@ class BrokerOrder(Base):
     )
     raw_event: Mapped[Optional[dict[str, Any]]] = mapped_column(JsonType, nullable=True)
 
-    __table_args__ = (Index("idx_broker_orders_updated_at", "updated_at"),)
+    __table_args__ = (
+        Index("idx_broker_orders_updated_at", "updated_at"),
+        Index("idx_broker_orders_user_account_broker", "requested_by_user_id", "account_id", "broker"),
+    )
 
 
 class PortfolioSnapshot(Base):

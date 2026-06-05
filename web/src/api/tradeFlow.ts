@@ -30,13 +30,23 @@ export async function createProposal(runId: string, ticker: string): Promise<Tra
     throw brokerNotConnectedError();
   }
 
-  // Local: gather the live inputs the server needs to size + risk-check.
-  const [account, positions, quote] = await Promise.all([
+  // Local: gather the live inputs the server needs to size + risk-check. IBKR
+  // can fail a point quote while still returning a current price in positions.
+  const [account, positions] = await Promise.all([
     channel.account(),
     channel.positions(),
-    channel.quote(ticker),
   ]);
-  return brokerApi.createLocalProposal({ run_id: runId, account, positions, price: quote.price });
+  let price: number;
+  try {
+    price = (await channel.quote(ticker)).price;
+  } catch (error) {
+    const held = positions.find((p) => p.ticker.toUpperCase() === ticker.toUpperCase());
+    if (!held?.current_price || held.current_price <= 0) {
+      throw error;
+    }
+    price = held.current_price;
+  }
+  return brokerApi.createLocalProposal({ run_id: runId, account, positions, price });
 }
 
 export async function approveProposal(a: TradeApproval): Promise<void> {
@@ -74,5 +84,6 @@ export async function approveProposal(a: TradeApproval): Promise<void> {
     filled_avg_price: placed.filled_avg_price,
     limit_price: placed.limit_price,
     account_id: status.account_id ?? undefined,
+    broker: status.broker ?? 'ibkr',
   });
 }
