@@ -9,7 +9,7 @@
 
 const { app, BrowserWindow, protocol, shell, ipcMain } = require('electron');
 const path = require('node:path');
-const fs = require('node:fs');
+const { registerAppProtocol } = require('./app-protocol.cjs');
 const { Sidecar } = require('./sidecar.cjs');
 
 const sidecar = new Sidecar();
@@ -18,25 +18,6 @@ const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL || '';
 const isDev = Boolean(DEV_SERVER_URL);
 const DIST_DIR = path.join(__dirname, '..', 'dist');
 
-const MIME = {
-  '.html': 'text/html',
-  '.js': 'text/javascript',
-  '.mjs': 'text/javascript',
-  '.css': 'text/css',
-  '.json': 'application/json',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.gif': 'image/gif',
-  '.webp': 'image/webp',
-  '.ico': 'image/x-icon',
-  '.woff': 'font/woff',
-  '.woff2': 'font/woff2',
-  '.ttf': 'font/ttf',
-  '.map': 'application/json',
-};
-
 // Privileged custom scheme must be declared before app `ready`.
 protocol.registerSchemesAsPrivileged([
   {
@@ -44,26 +25,6 @@ protocol.registerSchemesAsPrivileged([
     privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
   },
 ]);
-
-function registerAppProtocol() {
-  protocol.handle('app', async (request) => {
-    const { pathname } = new URL(request.url);
-    const rel = decodeURIComponent(pathname);
-    let filePath = path.join(DIST_DIR, rel);
-    // SPA fallback: a path with no real file extension, or a missing file,
-    // resolves to index.html so deep links and reloads work with BrowserRouter.
-    if (!path.extname(rel) || !fs.existsSync(filePath)) {
-      filePath = path.join(DIST_DIR, 'index.html');
-    }
-    try {
-      const data = await fs.promises.readFile(filePath);
-      const type = MIME[path.extname(filePath)] || 'application/octet-stream';
-      return new Response(data, { headers: { 'content-type': type } });
-    } catch {
-      return new Response('Not found', { status: 404 });
-    }
-  });
-}
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -124,7 +85,7 @@ function registerBrokerIpc() {
 }
 
 app.whenReady().then(() => {
-  if (!isDev) registerAppProtocol();
+  if (!isDev) registerAppProtocol(protocol, DIST_DIR);
   registerBrokerIpc();
   createWindow();
   // Start the sidecar in the background — the window loads immediately and the

@@ -13,6 +13,7 @@
     "electron": "electron .",
     "frontend:dev": "bash ../scripts/start_frontend_dev.sh",
     "electron:dev": "bash ../scripts/start_frontend_dev.sh",
+    "electron:test": "node --test electron/*.test.cjs",
     "electron:preview": "npm run build && electron .",
     "sidecar:build": "cd .. && .venv/bin/pyinstaller --noconfirm --distpath dist-sidecar --workpath build-sidecar packaging/sidecar.spec",
     "electron:pack": "npm run build && electron-builder --dir",
