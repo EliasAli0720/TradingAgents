@@ -138,7 +138,8 @@ def logout(
         SessionRepository(session).revoke(row.session_id)
         session.commit()
     _clear_auth_cookies(response)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    response.status_code = status.HTTP_204_NO_CONTENT
+    return None
 
 
 @router.get("/me", response_model=UserResponse)

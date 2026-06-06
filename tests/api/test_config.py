@@ -56,6 +56,8 @@ def test_concurrency_capacity_settings_read_from_env(monkeypatch):
 
 
 def test_auth_defaults(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
+    monkeypatch.setenv("TRADINGAGENTS_API_ENV", "production")
     for key in [
         "TRADINGAGENTS_API_SESSION_TTL_DAYS",
         "TRADINGAGENTS_API_SESSION_COOKIE_NAME",
@@ -90,3 +92,23 @@ def test_auth_env_overrides(monkeypatch):
     assert settings.login_rate_limit_per_min == 12
     assert settings.session_cookie_name == "ta_sess"
     assert settings.csrf_cookie_name == "ta_csrf"
+
+
+def test_cookie_secure_defaults_false_for_development(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
+    monkeypatch.setenv("TRADINGAGENTS_API_ENV", "development")
+    monkeypatch.delenv("TRADINGAGENTS_API_COOKIE_SECURE", raising=False)
+
+    settings = get_api_settings()
+
+    assert settings.cookie_secure is False
+
+
+def test_cookie_secure_explicit_env_overrides_development(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
+    monkeypatch.setenv("TRADINGAGENTS_API_ENV", "development")
+    monkeypatch.setenv("TRADINGAGENTS_API_COOKIE_SECURE", "true")
+
+    settings = get_api_settings()
+
+    assert settings.cookie_secure is True

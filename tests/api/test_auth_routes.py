@@ -111,6 +111,23 @@ def test_logout_invalidates_session():
     assert c.get("/auth/me").status_code == 401
 
 
+def test_logout_clears_browser_cookies():
+    c = _make_client()
+    _register(c, "alice", "hunter22a")
+    _login(c, "alice", "hunter22a")
+
+    csrf = c.cookies.get("tradingagents_csrf")
+    r = c.post("/auth/logout", headers={"X-CSRF-Token": csrf})
+
+    assert r.status_code == 204
+    set_cookie = r.headers.get("set-cookie", "").lower()
+    assert "tradingagents_session=" in set_cookie
+    assert "tradingagents_csrf=" in set_cookie
+    assert "max-age=0" in set_cookie
+    assert c.cookies.get("tradingagents_session") is None
+    assert c.cookies.get("tradingagents_csrf") is None
+
+
 def test_logout_requires_csrf():
     c = _make_client()
     _register(c, "alice", "hunter22a")

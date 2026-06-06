@@ -15,6 +15,11 @@ def _env_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in _TRUTHY
 
 
+def _default_cookie_secure() -> bool:
+    env = os.environ.get("TRADINGAGENTS_API_ENV", "production").strip().lower()
+    return env not in {"development", "dev", "local", "test"}
+
+
 @dataclass(frozen=True)
 class ApiSettings:
     database_url: str
@@ -60,7 +65,9 @@ def get_api_settings() -> ApiSettings:
         csrf_cookie_name=os.environ.get(
             "TRADINGAGENTS_API_CSRF_COOKIE_NAME", "tradingagents_csrf"
         ),
-        cookie_secure=_env_bool("TRADINGAGENTS_API_COOKIE_SECURE", True),
+        cookie_secure=_env_bool(
+            "TRADINGAGENTS_API_COOKIE_SECURE", _default_cookie_secure()
+        ),
         cookie_domain=os.environ.get("TRADINGAGENTS_API_COOKIE_DOMAIN") or None,
         login_rate_limit_per_min=int(
             os.environ.get("TRADINGAGENTS_API_LOGIN_RATE_LIMIT_PER_MIN", "5")

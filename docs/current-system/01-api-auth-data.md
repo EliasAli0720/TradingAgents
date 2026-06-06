@@ -49,7 +49,7 @@ uvicorn tradingagents.api.app:app --host 127.0.0.1 --port 8000
 | `DATABASE_URL` | 无 | API 主库 URL，生产通常 PostgreSQL |
 | `REDIS_URL` | `redis://localhost:6379/0` | Celery broker/backend、SSE pubsub、IBKR connector |
 | `MODEL_API_KEY_ENCRYPTION_KEY` | 无 | Fernet key，用于加密用户 LLM key 和 Webull secret |
-| `TRADINGAGENTS_API_COOKIE_SECURE` | `true` | cookie 是否带 Secure |
+| `TRADINGAGENTS_API_COOKIE_SECURE` | 生产默认 `true`；`development`/`dev`/`local`/`test` 默认 `false` | cookie 是否带 Secure |
 | `TRADINGAGENTS_API_SESSION_TTL_DAYS` | `14` | session 有效天数 |
 | `TRADINGAGENTS_MAX_RUNNING_SYSTEM` | `100` | dispatcher 系统级运行容量 |
 | `TRADINGAGENTS_MAX_RUNNING_PER_USER` | `5` | dispatcher 用户级运行容量 |
@@ -58,7 +58,7 @@ uvicorn tradingagents.api.app:app --host 127.0.0.1 --port 8000
 | `TRADINGAGENTS_WORKER_HEARTBEAT_SECONDS` | `10` | worker 心跳间隔 |
 | `TRADINGAGENTS_WORKER_STALE_AFTER_SECONDS` | `90` | sweeper 判定 stale running 的阈值 |
 
-本地 HTTP 调试时，如果浏览器无法保存 session cookie，优先检查 `TRADINGAGENTS_API_COOKIE_SECURE=false` 是否设置。测试 fixture 也是这样关掉 secure cookie。
+本地 HTTP 调试时，设置 `TRADINGAGENTS_API_ENV=development` 或 `TRADINGAGENTS_API_COOKIE_SECURE=false`；生产 HTTPS 应保持 `TRADINGAGENTS_API_COOKIE_SECURE=true`。
 
 ## 3. 数据库初始化
 
