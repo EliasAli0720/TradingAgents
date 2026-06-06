@@ -1,4 +1,5 @@
 import axios, { AxiosError } from 'axios';
+import { readCsrfToken } from './csrf';
 
 const BASE = import.meta.env.VITE_API_BASE ?? '/api';
 
@@ -8,15 +9,10 @@ export const http = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-function readCookie(name: string): string | null {
-  const m = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/[.$?*|{}()[\]\\/+^]/g, '\\$&') + '=([^;]*)'));
-  return m ? decodeURIComponent(m[1]) : null;
-}
-
 http.interceptors.request.use((config) => {
   const method = (config.method ?? 'get').toLowerCase();
   if (['post', 'put', 'patch', 'delete'].includes(method)) {
-    const csrf = readCookie('tradingagents_csrf');
+    const csrf = readCsrfToken();
     if (csrf) config.headers.set('X-CSRF-Token', csrf);
   }
   return config;

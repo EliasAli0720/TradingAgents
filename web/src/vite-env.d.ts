@@ -2,6 +2,7 @@
 
 interface ImportMetaEnv {
   readonly VITE_API_BASE: string;
+  readonly VITE_CSRF_COOKIE_NAME?: string;
 }
 
 interface ImportMeta {
