@@ -216,6 +216,12 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
+# Agent / Ruflo runtime state
+.claude-flow/
+.swarm/
+ruvector.db
+ruvector.db-*
+
 # Streamlit
 .streamlit/secrets.toml
 

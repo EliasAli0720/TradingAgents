@@ -9,9 +9,12 @@ import { useBrokerAccountContext } from './useBrokerAccountContext';
 export function useSnapshotPush() {
   const { account, positions, selected } = useBrokerAccountContext();
   const busy = useRef(false);
+  const selectedAccountId = selected?.account_id;
+  const selectedBroker = selected?.broker;
+  const selectedKey = selected?.key;
 
   useEffect(() => {
-    if (!selected) return;
+    if (!selectedAccountId || !selectedBroker) return;
     let cancelled = false;
 
     const push = async () => {
@@ -22,8 +25,8 @@ export function useSnapshotPush() {
         if (cancelled) return;
         const invested = currentPositions.reduce((s, p) => s + p.market_value, 0);
         await brokerApi.pushSnapshot({
-          account_id: selected.account_id,
-          broker: selected.broker,
+          account_id: selectedAccountId,
+          broker: selectedBroker,
           cash: acct.cash,
           invested_value: invested,
           total_value: acct.equity || acct.portfolio_value,
@@ -42,5 +45,5 @@ export function useSnapshotPush() {
       cancelled = true;
       clearInterval(id);
     };
-  }, [account, positions, selected?.account_id, selected?.broker, selected?.key]);
+  }, [account, positions, selectedAccountId, selectedBroker, selectedKey]);
 }

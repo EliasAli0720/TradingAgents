@@ -1,6 +1,6 @@
 const ACTIONABLE_SIGNALS = new Set(['BUY', 'OVERWEIGHT', 'UNDERWEIGHT', 'SELL']);
 const ALL_SIGNALS = new Set([...ACTIONABLE_SIGNALS, 'HOLD']);
-const RATING_LABEL_RE = /\brating\**\s*[:\-]\s*\**(buy|overweight|hold|underweight|sell)\b/i;
+const RATING_LABEL_RE = /\brating\**\s*[:-]\s*\**(buy|overweight|hold|underweight|sell)\b/i;
 
 export type ProposalEligibilityState = 'hidden' | 'waiting' | 'actionable' | 'no_action' | 'connect_account';
 
