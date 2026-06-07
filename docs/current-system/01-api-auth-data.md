@@ -50,6 +50,8 @@ uvicorn tradingagents.api.app:app --host 127.0.0.1 --port 8000
 | `REDIS_URL` | `redis://localhost:6379/0` | Celery broker/backend、SSE pubsub、IBKR connector |
 | `MODEL_API_KEY_ENCRYPTION_KEY` | 无 | Fernet key，用于加密用户 LLM key 和 Webull secret |
 | `TRADINGAGENTS_API_COOKIE_SECURE` | 生产默认 `true`；`development`/`dev`/`local`/`test` 默认 `false` | cookie 是否带 Secure |
+| `TRADINGAGENTS_API_CSRF_COOKIE_NAME` | `tradingagents_csrf` | CSRF cookie 名；前端构建时需同步 `VITE_CSRF_COOKIE_NAME` |
+| `TRADINGAGENTS_API_ALLOW_PRIVATE_BACKEND_URLS` | 生产默认 `false`；`development`/`dev`/`local`/`test` 默认 `true` | 是否允许用户配置 loopback/private/link-local/reserved LLM backend URL |
 | `TRADINGAGENTS_API_SESSION_TTL_DAYS` | `14` | session 有效天数 |
 | `TRADINGAGENTS_MAX_RUNNING_SYSTEM` | `100` | dispatcher 系统级运行容量 |
 | `TRADINGAGENTS_MAX_RUNNING_PER_USER` | `5` | dispatcher 用户级运行容量 |
@@ -58,7 +60,7 @@ uvicorn tradingagents.api.app:app --host 127.0.0.1 --port 8000
 | `TRADINGAGENTS_WORKER_HEARTBEAT_SECONDS` | `10` | worker 心跳间隔 |
 | `TRADINGAGENTS_WORKER_STALE_AFTER_SECONDS` | `90` | sweeper 判定 stale running 的阈值 |
 
-本地 HTTP 调试时，设置 `TRADINGAGENTS_API_ENV=development` 或 `TRADINGAGENTS_API_COOKIE_SECURE=false`；生产 HTTPS 应保持 `TRADINGAGENTS_API_COOKIE_SECURE=true`。
+本地 HTTP 调试时，设置 `TRADINGAGENTS_API_ENV=development` 或 `TRADINGAGENTS_API_COOKIE_SECURE=false`；生产 HTTPS 应保持 `TRADINGAGENTS_API_COOKIE_SECURE=true`。多租户生产部署应保持 `TRADINGAGENTS_API_ALLOW_PRIVATE_BACKEND_URLS=false`；只有可信本地 LLM/Ollama 部署才打开该开关。
 
 ## 3. 数据库初始化
 

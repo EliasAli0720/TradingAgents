@@ -405,13 +405,14 @@ server {
 ### 分析 HTTP API 部署补充（`tradingagents.api`）
 
 - **环境区分**：本地开发使用 `TRADINGAGENTS_API_ENV=development`，宿主机进程连接 `DATABASE_URL=postgresql+psycopg://tradingagents:tradingagents@localhost:5432/tradingagents` 和 `REDIS_URL=redis://localhost:6379/0`；Docker Compose 容器内通过 `DOCKER_DATABASE_URL` / `DOCKER_REDIS_URL` 连接服务名 `postgres` / `redis`；生产使用 `TRADINGAGENTS_API_ENV=production` 并显式提供生产 PostgreSQL/Redis 连接。
+- **安全敏感部署参数**：本地 HTTP 开发使用 `TRADINGAGENTS_API_ENV=development` 或 `TRADINGAGENTS_API_COOKIE_SECURE=false`；生产 HTTPS 保持 `TRADINGAGENTS_API_COOKIE_SECURE=true`。多租户生产部署保持 `TRADINGAGENTS_API_ALLOW_PRIVATE_BACKEND_URLS=false`；可信本地 LLM/Ollama 部署可设为 `true`。如果修改 `TRADINGAGENTS_API_CSRF_COOKIE_NAME`，构建前端时必须同步设置 `VITE_CSRF_COOKIE_NAME`。
 - **本地一键启动**：运行 `./start.sh api` 会启动 Docker PostgreSQL/Redis、初始化 PostgreSQL 表，并启动 FastAPI、Celery worker、Celery beat。脚本保持前台运行；按 `Ctrl-C` 会停止 API/worker/beat，保留数据库容器。另一个终端可运行 `./start.sh api-status` 查看状态，或 `./start.sh api-stop` 停止 API/worker/beat。
 - **队列调度**：`POST /runs` 只入库为 `queued`，Celery beat 每 `TRADINGAGENTS_DISPATCH_INTERVAL_SECONDS` 秒触发 dispatcher，把任务从 `queued` 迁到 `dispatching` 并投递给 worker。worker 开始执行后状态变为 `running`，完成后变为 `succeeded/failed/cancelled`。
 - **并发容量**：默认 `TRADINGAGENTS_MAX_RUNNING_SYSTEM=100`、`TRADINGAGENTS_MAX_RUNNING_PER_USER=5`、`TRADINGAGENTS_MAX_QUEUED_PER_USER=50`。系统容量按 `dispatching + running` 计数，单用户超过 5 个 active run 后继续创建的 run 会排队；超过 backlog 上限会返回 `429`。
 - **worker 并发**：本地 `./start.sh api` 默认 `TRADINGAGENTS_WORKER_CONCURRENCY=5`，且 `prefetch=1`，避免单个 worker 预取太多任务导致用户间不公平。生产要支撑 100 个系统并发时，不建议单机单 worker 开到 100；按机器资源横向扩多个 worker，使所有 worker 的 concurrency 总和约等于系统容量，并持续观察 provider 限流、CPU、内存、数据库连接数。
 - **provider 限流**：worker 并发只是本地执行槽位；外部模型 provider 还有单独并发门控，避免 100 个 run 同时打爆同一个 provider。调大系统并发前先确认 provider quota、API key 额度和失败重试策略。
 - **租约与心跳**：dispatcher 给 `dispatching` run 设置 lease；worker 执行中定期写 heartbeat。Celery beat 会周期运行 sweeper，过期的 `dispatching` 会回到 `queued`，心跳过期的 `running` 会按剩余 attempts 重排或标记失败。
-- **必须走 HTTPS**：API 下发的 `tradingagents_session` cookie 默认 `Secure`，明文 HTTP 下浏览器会丢弃；本地开发可暂时 `TRADINGAGENTS_API_COOKIE_SECURE=false`，生产**禁止关闭**。
+- **必须走 HTTPS**：API 下发的 `tradingagents_session` cookie 在生产默认 `Secure`，明文 HTTP 下浏览器会丢弃；本地开发通过 `TRADINGAGENTS_API_ENV=development` 自动关闭 Secure cookie，生产**禁止关闭**。
 - **CSRF**：状态变更（`POST/PATCH/DELETE`）必须同时携带 cookie `tradingagents_csrf` 与请求头 `X-CSRF-Token`，二者字符串相等。前端 JS 可读 csrf cookie，session cookie 是 `HttpOnly` 拿不到。
 - **首位注册即 admin**：表内零用户时 `POST /auth/register` 自动赋 `admin`，其后默认 `viewer`，需 admin 通过 `PATCH /admin/users/{id}` 提升。
 - **限流**：`/auth/login` 默认每分钟 5 次（按 IP+username 滑动窗口）。多实例部署需要把 `tradingagents/api/rate_limit.py:RedisBackend` 接进 `get_login_rate_limiter()`，否则各实例计数独立。
