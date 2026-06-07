@@ -133,6 +133,9 @@ def get_global_news_yfinance(
         limit = config["global_news_article_limit"]
     search_queries = config["global_news_queries"]
 
+    curr_dt = datetime.strptime(curr_date, "%Y-%m-%d")
+    start_dt = curr_dt - relativedelta(days=look_back_days)
+    start_date = start_dt.strftime("%Y-%m-%d")
     all_news = []
     seen_titles = set()
 
@@ -150,6 +153,10 @@ def get_global_news_yfinance(
                     if "content" in article:
                         data = _extract_article_data(article)
                         title = data["title"]
+                        if data.get("pub_date"):
+                            pub_naive = data["pub_date"].replace(tzinfo=None)
+                            if pub_naive < start_dt or pub_naive > curr_dt + relativedelta(days=1):
+                                continue
                     else:
                         title = article.get("title", "")
 
@@ -164,20 +171,16 @@ def get_global_news_yfinance(
         if not all_news:
             return f"No global news found for {curr_date}"
 
-        # Calculate date range
-        curr_dt = datetime.strptime(curr_date, "%Y-%m-%d")
-        start_dt = curr_dt - relativedelta(days=look_back_days)
-        start_date = start_dt.strftime("%Y-%m-%d")
-
         news_str = ""
+        filtered_count = 0
         for article in all_news[:limit]:
             # Handle both flat and nested structures
             if "content" in article:
                 data = _extract_article_data(article)
-                # Skip articles published after curr_date (look-ahead guard)
+                # Skip articles outside the requested date window when publish time is available.
                 if data.get("pub_date"):
                     pub_naive = data["pub_date"].replace(tzinfo=None) if hasattr(data["pub_date"], "replace") else data["pub_date"]
-                    if pub_naive > curr_dt + relativedelta(days=1):
+                    if pub_naive < start_dt or pub_naive > curr_dt + relativedelta(days=1):
                         continue
                 title = data["title"]
                 publisher = data["publisher"]
@@ -195,7 +198,10 @@ def get_global_news_yfinance(
             if link:
                 news_str += f"Link: {link}\n"
             news_str += "\n"
+            filtered_count += 1
 
+        if filtered_count == 0:
+            return f"No global news found for {curr_date}"
         return f"## Global Market News, from {start_date} to {curr_date}:\n\n{news_str}"
 
     except Exception as e:

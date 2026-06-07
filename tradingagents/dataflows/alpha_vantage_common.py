@@ -14,6 +14,9 @@ def get_api_key() -> str:
         raise ValueError("ALPHA_VANTAGE_API_KEY environment variable is not set.")
     return api_key
 
+def _request_timeout_seconds() -> float:
+    return float(os.getenv("ALPHA_VANTAGE_TIMEOUT_SECONDS", "30"))
+
 def format_datetime_for_api(date_input) -> str:
     """Convert various date formats to YYYYMMDDTHHMM format required by Alpha Vantage API."""
     if isinstance(date_input, str):
@@ -63,7 +66,11 @@ def _make_api_request(function_name: str, params: dict) -> dict | str:
         # Remove entitlement if it's None or empty
         api_params.pop("entitlement", None)
     
-    response = requests.get(API_BASE_URL, params=api_params)
+    response = requests.get(
+        API_BASE_URL,
+        params=api_params,
+        timeout=_request_timeout_seconds(),
+    )
     response.raise_for_status()
 
     response_text = response.text
