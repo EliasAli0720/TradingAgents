@@ -176,6 +176,48 @@ def test_put_model_settings_allows_custom_model_for_custom_provider():
     assert response.json()["quick_think_llm"] == "qwen-fast-experimental"
 
 
+def test_put_model_settings_rejects_private_backend_url_in_production(monkeypatch):
+    monkeypatch.setenv("MODEL_API_KEY_ENCRYPTION_KEY", FERNET_KEY)
+    monkeypatch.setenv("TRADINGAGENTS_API_ALLOW_PRIVATE_BACKEND_URLS", "false")
+    client = _client()
+    csrf = _login(client)
+
+    response = client.put(
+        "/settings/model",
+        json={
+            "llm_provider": "ollama",
+            "deep_think_llm": "llama3.1",
+            "quick_think_llm": "llama3.1",
+            "backend_url": "http://127.0.0.1:11434/v1",
+        },
+        headers={"X-CSRF-Token": csrf},
+    )
+
+    assert response.status_code == 422
+    assert "private backend URLs are disabled" in response.json()["detail"]
+
+
+def test_put_model_settings_allows_private_backend_url_when_enabled(monkeypatch):
+    monkeypatch.setenv("MODEL_API_KEY_ENCRYPTION_KEY", FERNET_KEY)
+    monkeypatch.setenv("TRADINGAGENTS_API_ALLOW_PRIVATE_BACKEND_URLS", "true")
+    client = _client()
+    csrf = _login(client)
+
+    response = client.put(
+        "/settings/model",
+        json={
+            "llm_provider": "ollama",
+            "deep_think_llm": "llama3.1",
+            "quick_think_llm": "llama3.1",
+            "backend_url": "http://127.0.0.1:11434/v1",
+        },
+        headers={"X-CSRF-Token": csrf},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["backend_url"] == "http://127.0.0.1:11434/v1"
+
+
 def test_model_settings_stores_masks_preserves_and_clears_api_key(monkeypatch):
     monkeypatch.setenv("MODEL_API_KEY_ENCRYPTION_KEY", FERNET_KEY)
     client = _client()
@@ -221,6 +263,40 @@ def test_model_settings_stores_masks_preserves_and_clears_api_key(monkeypatch):
     assert response.status_code == 200
     assert response.json()["has_api_key"] is False
     assert response.json()["api_key_masked"] is None
+
+
+def test_model_settings_clears_api_key_when_provider_changes(monkeypatch):
+    monkeypatch.setenv("MODEL_API_KEY_ENCRYPTION_KEY", FERNET_KEY)
+    client = _client()
+    csrf = _login(client)
+
+    response = client.put(
+        "/settings/model",
+        json={
+            "llm_provider": "openai",
+            "deep_think_llm": "gpt-5.4",
+            "quick_think_llm": "gpt-5.4-mini",
+            "backend_url": None,
+            "api_key": "sk-openai-abcdef123456",
+        },
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert response.status_code == 200
+    assert response.json()["has_api_key"] is True
+
+    response = client.put(
+        "/settings/model",
+        json={
+            "llm_provider": "anthropic",
+            "deep_think_llm": "claude-opus-4-7",
+            "quick_think_llm": "claude-haiku-4-5",
+            "backend_url": None,
+        },
+        headers={"X-CSRF-Token": csrf},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["has_api_key"] is False
 
 
 def test_validate_model_settings_reports_user_service_and_missing_key(monkeypatch):
@@ -452,6 +528,19 @@ def test_translation_settings_crud_and_validation():
     assert body["model"] == "deepseek-v4-flash"
     assert body["has_api_key"] is True
     assert body["api_key_masked"] and "sk-translate-123456" not in body["api_key_masked"]
+
+    # Changing provider without a replacement key clears the old provider key.
+    changed = client.put(
+        "/settings/translation",
+        json={
+            "llm_provider": "openai",
+            "model": "gpt-4o-mini",
+            "backend_url": None,
+        },
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert changed.status_code == 200
+    assert changed.json()["has_api_key"] is False
 
     # Invalid provider/model combo is rejected
     bad = client.put(

@@ -112,3 +112,23 @@ def test_cookie_secure_explicit_env_overrides_development(monkeypatch):
     settings = get_api_settings()
 
     assert settings.cookie_secure is True
+
+
+def test_private_backend_urls_default_to_disabled_in_production(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
+    monkeypatch.setenv("TRADINGAGENTS_API_ENV", "production")
+    monkeypatch.delenv("TRADINGAGENTS_API_ALLOW_PRIVATE_BACKEND_URLS", raising=False)
+
+    settings = get_api_settings()
+
+    assert settings.allow_private_backend_urls is False
+
+
+def test_private_backend_urls_default_to_enabled_in_test(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
+    monkeypatch.setenv("TRADINGAGENTS_API_ENV", "test")
+    monkeypatch.delenv("TRADINGAGENTS_API_ALLOW_PRIVATE_BACKEND_URLS", raising=False)
+
+    settings = get_api_settings()
+
+    assert settings.allow_private_backend_urls is True

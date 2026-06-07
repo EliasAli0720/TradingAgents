@@ -42,11 +42,14 @@ class UserTranslationSettingsRepository:
             self.session.add(settings)
             return settings
 
+        provider_changed = settings.llm_provider != llm_provider
         settings.llm_provider = llm_provider
         settings.model = model
         settings.backend_url = backend_url
         if encrypted_api_key is not None:
             settings.encrypted_api_key = encrypted_api_key
+        elif provider_changed:
+            settings.encrypted_api_key = None
         settings.updated_at = now
         return settings
 

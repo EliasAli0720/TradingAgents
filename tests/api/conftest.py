@@ -11,6 +11,7 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _disable_secure_cookies(monkeypatch):
+    monkeypatch.setenv("TRADINGAGENTS_API_ENV", "test")
     monkeypatch.setenv("TRADINGAGENTS_API_COOKIE_SECURE", "false")
 
 

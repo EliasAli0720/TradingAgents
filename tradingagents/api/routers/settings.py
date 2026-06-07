@@ -5,13 +5,15 @@ import os
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
-from tradingagents.llm_clients.api_key_env import get_api_key_env
 from tradingagents.api.crypto import decrypt_secret
+from tradingagents.api.config import get_api_settings
 from tradingagents.api.deps import get_current_user, get_db_session, get_model_probe
 from tradingagents.api.model_catalog_repository import LLMModelCatalogRepository
 from tradingagents.api.model_probe import ModelProbeRequest
 from tradingagents.api.model_settings_repository import UserModelSettingsRepository
 from tradingagents.api.models import User
+from tradingagents.api.url_validation import UnsafeBackendUrl, validate_backend_url
+from tradingagents.llm_clients.api_key_env import get_api_key_env
 from tradingagents.api.translation_catalog import (
     TRANSLATION_PROVIDERS,
     get_translation_provider,
@@ -36,6 +38,16 @@ from tradingagents.api.schemas import (
 
 
 router = APIRouter(prefix="/settings", tags=["settings"])
+
+
+def _safe_backend_url(value: str | None) -> str | None:
+    try:
+        return validate_backend_url(
+            value,
+            allow_private=get_api_settings().allow_private_backend_urls,
+        )
+    except UnsafeBackendUrl as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.put("/preferences", status_code=status.HTTP_204_NO_CONTENT)
@@ -136,7 +148,7 @@ def put_model_settings(
         llm_provider=request.llm_provider,
         deep_think_llm=request.deep_think_llm,
         quick_think_llm=request.quick_think_llm,
-        backend_url=request.backend_url,
+        backend_url=_safe_backend_url(request.backend_url),
         api_key=request.api_key,
     )
     session.commit()
@@ -198,7 +210,7 @@ def validate_model_settings(
         ModelProbeRequest(
             provider=settings.llm_provider,
             model=settings.quick_think_llm,
-            backend_url=settings.backend_url,
+            backend_url=_safe_backend_url(settings.backend_url),
             api_key=api_key,
         )
     )
@@ -275,7 +287,7 @@ def put_translation_settings(
         user_id=user.user_id,
         llm_provider=request.llm_provider,
         model=request.model,
-        backend_url=request.backend_url,
+        backend_url=_safe_backend_url(request.backend_url),
         api_key=request.api_key,
     )
     session.commit()
@@ -337,7 +349,7 @@ def validate_translation_model(
         ModelProbeRequest(
             provider=settings.llm_provider,
             model=settings.model,
-            backend_url=settings.backend_url,
+            backend_url=_safe_backend_url(settings.backend_url),
             api_key=api_key,
         )
     )

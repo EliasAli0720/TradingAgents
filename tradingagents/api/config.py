@@ -39,6 +39,7 @@ class ApiSettings:
     run_lease_seconds: int = 600
     worker_heartbeat_seconds: int = 10
     worker_stale_after_seconds: int = 90
+    allow_private_backend_urls: bool = False
 
 
 def get_api_settings() -> ApiSettings:
@@ -84,5 +85,10 @@ def get_api_settings() -> ApiSettings:
         ),
         worker_stale_after_seconds=int(
             os.environ.get("TRADINGAGENTS_WORKER_STALE_AFTER_SECONDS", "90")
+        ),
+        allow_private_backend_urls=_env_bool(
+            "TRADINGAGENTS_API_ALLOW_PRIVATE_BACKEND_URLS",
+            os.environ.get("TRADINGAGENTS_API_ENV", "").strip().lower()
+            in {"development", "dev", "local", "test"},
         ),
     )

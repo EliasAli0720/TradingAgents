@@ -155,3 +155,29 @@ def test_user_model_settings_repository_preserves_replaces_and_clears_api_key(mo
         "has_api_key": False,
         "api_key_masked": None,
     }
+
+
+def test_user_model_settings_repository_clears_api_key_when_provider_changes(monkeypatch):
+    monkeypatch.setenv("MODEL_API_KEY_ENCRYPTION_KEY", FERNET_KEY)
+    session = _session()
+    session.add(_user())
+    repo = UserModelSettingsRepository(session)
+
+    repo.upsert(
+        user_id="usr_1",
+        llm_provider="openai",
+        deep_think_llm="gpt-5.4",
+        quick_think_llm="gpt-5.4-mini",
+        backend_url=None,
+        api_key="sk-openai-abcdef123456",
+    )
+
+    repo.upsert(
+        user_id="usr_1",
+        llm_provider="anthropic",
+        deep_think_llm="claude-opus-4-7",
+        quick_think_llm="claude-haiku-4-5",
+        backend_url=None,
+    )
+
+    assert repo.get("usr_1").encrypted_api_key is None
