@@ -234,6 +234,17 @@ def test_place_manual_server_order_mirrors_order():
     assert any(o["broker_order_id"] == "O1" and o["ticker"] == "MSFT" for o in orders)
 
 
+def test_place_order_rejects_non_positive_qty():
+    client, _, _ = _admin_client()
+
+    response = client.post(
+        "/broker/orders",
+        json={"ticker": "AAPL", "qty": 0, "side": "buy", "order_type": "market"},
+    )
+
+    assert response.status_code == 422
+
+
 def test_viewer_cannot_place_manual_server_order():
     client, _, app = _admin_client()
     bob = TestClient(app)

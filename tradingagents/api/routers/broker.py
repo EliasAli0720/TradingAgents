@@ -8,7 +8,7 @@ approving, rejecting, cancelling and previewing require admin/operator.
 
 from __future__ import annotations
 
-from typing import Any, Literal, Optional
+from typing import Annotated, Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -33,6 +33,10 @@ from tradingbot.services import (
 router = APIRouter(prefix="/broker", tags=["broker"])
 
 _TRADER_ROLES = ("admin", "operator")
+
+PositiveInt = Annotated[int, Field(gt=0)]
+PositiveFloat = Annotated[float, Field(gt=0)]
+NonNegativeFloat = Annotated[float, Field(ge=0)]
 
 
 # --------------------------------------------------------------------------- #
@@ -114,10 +118,10 @@ class ApprovalResponse(BaseModel):
 
 class PreviewRequest(BaseModel):
     ticker: str
-    qty: int
+    qty: PositiveInt
     side: Literal["buy", "sell"]
     order_type: Literal["market", "limit"] = "market"
-    limit_price: Optional[float] = None
+    limit_price: Optional[PositiveFloat] = None
     time_in_force: str = "day"
 
 
@@ -131,10 +135,10 @@ class PreviewResponse(BaseModel):
 
 class PlaceOrderRequest(BaseModel):
     ticker: str
-    qty: int
+    qty: PositiveInt
     side: Literal["buy", "sell"]
     order_type: Literal["market", "limit"] = "market"
-    limit_price: Optional[float] = None
+    limit_price: Optional[PositiveFloat] = None
     time_in_force: str = "day"
 
 
@@ -159,10 +163,10 @@ class CancelResponse(BaseModel):
 
 
 class AccountSnap(BaseModel):
-    cash: float
-    portfolio_value: float
-    buying_power: float
-    equity: float
+    cash: NonNegativeFloat
+    portfolio_value: NonNegativeFloat
+    buying_power: NonNegativeFloat
+    equity: NonNegativeFloat
 
 
 class PositionSnap(BaseModel):
@@ -180,23 +184,23 @@ class LocalProposalRequest(BaseModel):
     run_id: str
     account: AccountSnap
     positions: list[PositionSnap] = []
-    price: float
+    price: PositiveFloat
 
 
 class ExecutedRequest(BaseModel):
     broker_order_id: str
     status: str = "submitted"
-    filled_qty: float = 0.0
-    filled_avg_price: Optional[float] = None
-    limit_price: Optional[float] = None
+    filled_qty: NonNegativeFloat = 0.0
+    filled_avg_price: Optional[PositiveFloat] = None
+    limit_price: Optional[PositiveFloat] = None
     account_id: Optional[str] = None
     broker: str = "ibkr"
 
 
 class OrderStatusRequest(BaseModel):
     status: str
-    filled_qty: float = 0.0
-    filled_avg_price: Optional[float] = None
+    filled_qty: NonNegativeFloat = 0.0
+    filled_avg_price: Optional[PositiveFloat] = None
 
 
 class SnapshotRequest(BaseModel):
@@ -215,11 +219,11 @@ class ManualOrderRequest(BaseModel):
     ticker: str
     side: str
     order_type: str = "market"
-    quantity: float
+    quantity: PositiveFloat
     status: str = "submitted"
-    filled_qty: float = 0.0
-    filled_avg_price: Optional[float] = None
-    limit_price: Optional[float] = None
+    filled_qty: NonNegativeFloat = 0.0
+    filled_avg_price: Optional[PositiveFloat] = None
+    limit_price: Optional[PositiveFloat] = None
 
 
 # --------------------------------------------------------------------------- #

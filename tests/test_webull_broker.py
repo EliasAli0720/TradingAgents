@@ -192,6 +192,26 @@ def test_limit_order_requires_price():
         broker.submit_order("AAPL", 10, OrderSide.BUY, OrderType.LIMIT)
 
 
+def test_webull_rejects_non_positive_quantity_before_sdk_call():
+    client = FakeWebullClient()
+    broker = WebullBroker(client, account_id="DU999")
+
+    with pytest.raises(ValueError, match="quantity must be greater than zero"):
+        broker.submit_order("AAPL", 0, OrderSide.BUY, OrderType.MARKET)
+
+    assert client.calls == []
+
+
+def test_webull_rejects_non_positive_limit_price_before_sdk_call():
+    client = FakeWebullClient()
+    broker = WebullBroker(client, account_id="DU999")
+
+    with pytest.raises(ValueError, match="limit_price must be greater than zero"):
+        broker.submit_order("AAPL", 1, OrderSide.BUY, OrderType.LIMIT, limit_price=0)
+
+    assert client.calls == []
+
+
 def test_submit_order_builds_payload_and_maps():
     client = FakeWebullClient()
     broker = WebullBroker(client, account_id="DU999")

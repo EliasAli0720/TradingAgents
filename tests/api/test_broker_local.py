@@ -206,6 +206,24 @@ def test_manual_order_recorded_and_listed(tmp_path):
     assert any(r["ticker"] == "TSLA" for r in trades["trades"])
 
 
+def test_manual_order_rejects_negative_quantity(tmp_path):
+    client, _ = _admin_client(tmp_path)
+
+    response = client.post(
+        "/broker/orders/manual",
+        json={
+            "broker_order_id": "ord-bad",
+            "account_id": "DU1",
+            "ticker": "AAPL",
+            "side": "buy",
+            "order_type": "market",
+            "quantity": -1,
+        },
+    )
+
+    assert response.status_code == 422
+
+
 def test_orders_can_be_filtered_by_account_id(tmp_path):
     client, _ = _admin_client(tmp_path)
     for account_id, ticker in (("DUWEBULL", "AAPL"), ("DULOCAL", "MSFT")):

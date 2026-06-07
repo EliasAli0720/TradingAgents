@@ -219,6 +219,10 @@ class WebullBroker(BrokerAdapter):
         time_in_force: str,
         client_order_id: Optional[str],
     ) -> Dict[str, Any]:
+        if qty <= 0:
+            raise ValueError("quantity must be greater than zero")
+        if limit_price is not None and limit_price <= 0:
+            raise ValueError("limit_price must be greater than zero")
         if order_type == OrderType.LIMIT and limit_price is None:
             raise ValueError("limit_price is required for LIMIT orders")
         symbol = ticker.upper()
